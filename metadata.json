@@ -1,0 +1,6 @@
+{
+  "name": "IVE Dive Archive",
+  "description": "IVE discography and member archive with music player and favorites",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
