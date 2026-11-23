@@ -29,6 +29,8 @@ export function ExpandedPlayer() {
     currentTrack,
     isPlaying,
     progress,
+    effectiveDuration,
+    hasRealAudio,
     shuffle,
     repeat,
     expanded,
@@ -71,7 +73,7 @@ export function ExpandedPlayer() {
   if (!expanded || !currentTrack) return null;
 
   const album = getAlbum(currentTrack.albumId);
-  const total = trackDuration(currentTrack);
+  const total = effectiveDuration || trackDuration(currentTrack);
 
   const close = () => {
     setClosing(true);
@@ -315,7 +317,14 @@ export function ExpandedPlayer() {
           <div className="mt-4">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-2xl font-bold leading-tight">{currentTrack.title}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="truncate text-2xl font-bold leading-tight">{currentTrack.title}</h2>
+                  {hasRealAudio && (
+                    <span className="shrink-0 rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-primary">
+                      ● Live Audio
+                    </span>
+                  )}
+                </div>
                 <p className="mt-1 truncate text-sm text-muted-foreground">
                   {currentTrack.artist ?? "IVE"} · {album?.title}
                   {currentTrack.language && currentTrack.language !== "Korean" && (

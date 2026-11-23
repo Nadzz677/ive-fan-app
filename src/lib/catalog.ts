@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   collection,
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   writeBatch,
+  type QuerySnapshot,
+  type DocumentData,
 } from "firebase/firestore";
 import {
   albums as staticAlbums,
@@ -20,11 +23,21 @@ import {
   getMemberImage,
   getNewsImage,
   getSongArtwork,
+  songImageOverrides,
 } from "@/data/imageAssets";
 import type { Album, Member, NewsItem, Track } from "@/types";
 import { db, isFirebaseConfigured } from "./firebase";
 
-const CATALOG_STALE_TIME = 30 * 1000;
+// Cache stays fresh indefinitely while real-time onSnapshot listeners keep it updated
+const CATALOG_STALE_TIME = 5 * 60 * 1000;
+
+const CACHE_KEYS = {
+  albums: "ive-dive-archive:cache:v2:albums",
+  tracks: "ive-dive-archive:cache:v2:tracks",
+  members: "ive-dive-archive:cache:v2:members",
+  news: "ive-dive-archive:cache:v2:news",
+  config: "ive-dive-archive:cache:v2:config",
+} as const;
 
 export interface AppConfig {
   featuredAlbumId: string;
@@ -35,6 +48,48 @@ const DEFAULT_CONFIG: AppConfig = {
   featuredAlbumId: staticFeaturedAlbumId,
   featuredTrackId: staticFeaturedTrackId,
 };
+
+// ==========================================
+// 0ms SYNCHRONOUS LOCALSTORAGE SNAPSHOT HYDRATION & IMAGE PREWARMING
+// ==========================================
+
+const prewarmedUrls = new Set<string>();
+
+function prewarmImageUrls(urls: (string | undefined)[]) {
+  if (typeof window === "undefined") return;
+  for (const raw of urls) {
+    const url = raw?.trim();
+    if (!url || prewarmedUrls.has(url)) continue;
+    prewarmedUrls.add(url);
+    const img = new window.Image();
+    img.decoding = "async";
+    img.src = url;
+  }
+}
+
+function readLocalCache<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as T;
+    if (Array.isArray(fallback) && (!Array.isArray(parsed) || parsed.length === 0)) {
+      return fallback;
+    }
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalCache<T>(key: string, data: T): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    /* ignore storage quota errors */
+  }
+}
 
 // ==========================================
 // DRAFT / STAGING STORE (Before "Push Live Changes")
@@ -178,6 +233,7 @@ export function stageAlbumSave(album: Album) {
     upsertedAlbums: { ...stagedState.upsertedAlbums, [album.id]: album },
     deletedAlbumIds: stagedState.deletedAlbumIds.filter((id) => id !== album.id),
   };
+  prewarmImageUrls([album.cover]);
   emitStageChange();
 }
 
@@ -247,6 +303,7 @@ export function stageMemberSave(member: Member) {
     ...stagedState,
     upsertedMembers: { ...stagedState.upsertedMembers, [member.id]: member },
   };
+  prewarmImageUrls([member.image]);
   emitStageChange();
 }
 
@@ -256,6 +313,7 @@ export function stageNewsSave(item: NewsItem) {
     upsertedNews: { ...stagedState.upsertedNews, [item.id]: item },
     deletedNewsIds: stagedState.deletedNewsIds.filter((id) => id !== item.id),
   };
+  prewarmImageUrls([item.image]);
   emitStageChange();
 }
 
@@ -377,12 +435,22 @@ export async function pushStagedChangesToFirestore(): Promise<number> {
 }
 
 // ==========================================
-// LIVE MODULE CACHE & FETCHERS
+// LIVE MODULE CACHE, PARSERS & REAL-TIME LISTENERS
 // ==========================================
 
-let liveAlbumsCache: Album[] = staticAlbums;
-let liveTracksCache: Track[] = staticTracks;
-let liveMembersCache: Member[] = staticMembers;
+// Hydrate module caches synchronously from localStorage at module load time (0ms!)
+let liveAlbumsCache: Album[] = readLocalCache<Album[]>(CACHE_KEYS.albums, staticAlbums);
+let liveTracksCache: Track[] = readLocalCache<Track[]>(CACHE_KEYS.tracks, staticTracks);
+let liveMembersCache: Member[] = readLocalCache<Member[]>(CACHE_KEYS.members, staticMembers);
+let liveNewsCache: NewsItem[] = readLocalCache<NewsItem[]>(CACHE_KEYS.news, staticNews);
+let liveConfigCache: AppConfig = readLocalCache<AppConfig>(CACHE_KEYS.config, DEFAULT_CONFIG);
+
+// Prewarm any cached database artwork URLs immediately on startup
+if (typeof window !== "undefined") {
+  prewarmImageUrls(liveAlbumsCache.map((a) => a.cover));
+  prewarmImageUrls(liveMembersCache.map((m) => m.image));
+  prewarmImageUrls(liveNewsCache.map((n) => n.image));
+}
 
 export function getLiveAlbum(id?: string): Album | undefined {
   if (!id) return undefined;
@@ -407,16 +475,23 @@ export function getLiveTrack(id?: string): Track | undefined {
   );
 }
 
+/**
+ * Resolves song artwork prioritizing:
+ * 1. Explicit song-specific override in `songImageOverrides`
+ * 2. Live/Firestore parent album cover (so database covers like Looks Can Kill appear immediately)
+ * 3. Static fallback from `getSongArtwork`
+ */
 export function getLiveTrackArtwork(
   track?: Track | { id?: string; albumId?: string } | null,
 ): string {
   if (!track) return "";
-  const staticOrOverride = getSongArtwork(track);
-  if (staticOrOverride) return staticOrOverride;
+  const explicitSongOverride = track.id ? songImageOverrides[track.id]?.trim() : undefined;
+  if (explicitSongOverride) return explicitSongOverride;
   if (track.albumId) {
-    return getLiveAlbum(track.albumId)?.cover?.trim() || "";
+    const liveCover = getLiveAlbum(track.albumId)?.cover?.trim();
+    if (liveCover) return liveCover;
   }
-  return "";
+  return getSongArtwork(track);
 }
 
 function stripUndefined<T extends object>(obj: T): Record<string, unknown> {
@@ -429,62 +504,67 @@ function stripUndefined<T extends object>(obj: T): Record<string, unknown> {
   return out;
 }
 
-async function fetchAlbumsFromFirestore(): Promise<Album[]> {
-  if (!db) return staticAlbums;
-  const snap = await getDocs(collection(db, "albums"));
-  if (snap.empty) {
-    liveAlbumsCache = staticAlbums;
-    return staticAlbums;
+function parseAlbumsSnapshot(snap: QuerySnapshot<DocumentData>): Album[] {
+  if (snap.empty) return staticAlbums;
+
+  // Start with staticAlbums map so any unseeded static albums are never lost,
+  // then overlay all Firestore documents on top.
+  const map = new Map<string, Album>();
+  for (const sa of staticAlbums) {
+    map.set(sa.id, {
+      ...sa,
+      cover: sa.cover?.trim() || getAlbumArtwork(sa.id),
+    });
   }
 
-  const list: Album[] = snap.docs.map((d) => {
+  for (const d of snap.docs) {
     const data = d.data() as Album;
     const id = data.id || d.id;
-    return {
+    map.set(id, {
       ...data,
       id,
       trackIds: Array.isArray(data.trackIds) ? data.trackIds : [],
       trackCount:
         typeof data.trackCount === "number" ? data.trackCount : (data.trackIds?.length ?? 0),
       cover: data.cover?.trim() || getAlbumArtwork(id),
-    };
-  });
+    });
+  }
 
-  const sorted = list.sort(
+  const sorted = Array.from(map.values()).sort(
     (a, b) => new Date(b.releaseDate).getTime() - new Date(a.releaseDate).getTime(),
   );
   liveAlbumsCache = sorted;
+  writeLocalCache(CACHE_KEYS.albums, sorted);
+  prewarmImageUrls(sorted.map((a) => a.cover));
   return sorted;
 }
 
-async function fetchTracksFromFirestore(): Promise<Track[]> {
-  if (!db) return staticTracks;
-  const snap = await getDocs(collection(db, "tracks"));
-  if (snap.empty) {
-    liveTracksCache = staticTracks;
-    return staticTracks;
+function parseTracksSnapshot(snap: QuerySnapshot<DocumentData>): Track[] {
+  if (snap.empty) return staticTracks;
+
+  const map = new Map<string, Track>();
+  for (const st of staticTracks) {
+    map.set(st.id, st);
   }
 
-  const list: Track[] = snap.docs.map((d) => {
+  for (const d of snap.docs) {
     const data = d.data() as Track;
-    return {
+    const id = data.id || d.id;
+    map.set(id, {
       ...data,
-      id: data.id || d.id,
+      id,
       releaseIds: Array.isArray(data.releaseIds) ? data.releaseIds : [data.albumId],
-    };
-  });
+    });
+  }
 
+  const list = Array.from(map.values());
   liveTracksCache = list;
+  writeLocalCache(CACHE_KEYS.tracks, list);
   return list;
 }
 
-async function fetchMembersFromFirestore(): Promise<Member[]> {
-  if (!db) return staticMembers;
-  const snap = await getDocs(collection(db, "members"));
-  if (snap.empty) {
-    liveMembersCache = staticMembers;
-    return staticMembers;
-  }
+function parseMembersSnapshot(snap: QuerySnapshot<DocumentData>): Member[] {
+  if (snap.empty) return staticMembers;
 
   const map = new Map<string, Member>();
   for (const d of snap.docs) {
@@ -497,19 +577,18 @@ async function fetchMembersFromFirestore(): Promise<Member[]> {
     });
   }
 
-  // Keep canonical member ordering (Yujin -> Gaeul -> Rei -> Wonyoung -> Liz -> Leeseo) plus any new entries
   const ordered: Member[] = staticMembers.map((m) => map.get(m.id) ?? m);
   for (const [id, m] of map.entries()) {
     if (!ordered.some((o) => o.id === id)) ordered.push(m);
   }
 
   liveMembersCache = ordered;
+  writeLocalCache(CACHE_KEYS.members, ordered);
+  prewarmImageUrls(ordered.map((m) => m.image));
   return ordered;
 }
 
-async function fetchNewsFromFirestore(): Promise<NewsItem[]> {
-  if (!db) return staticNews;
-  const snap = await getDocs(collection(db, "news"));
+function parseNewsSnapshot(snap: QuerySnapshot<DocumentData>): NewsItem[] {
   if (snap.empty) return staticNews;
 
   const list: NewsItem[] = snap.docs.map((d) => {
@@ -523,25 +602,139 @@ async function fetchNewsFromFirestore(): Promise<NewsItem[]> {
     };
   });
 
-  return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sorted = list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  liveNewsCache = sorted;
+  writeLocalCache(CACHE_KEYS.news, sorted);
+  prewarmImageUrls(sorted.map((n) => n.image));
+  return sorted;
+}
+
+async function fetchAlbumsFromFirestore(): Promise<Album[]> {
+  if (!db) return liveAlbumsCache;
+  const snap = await getDocs(collection(db, "albums"));
+  return parseAlbumsSnapshot(snap);
+}
+
+async function fetchTracksFromFirestore(): Promise<Track[]> {
+  if (!db) return liveTracksCache;
+  const snap = await getDocs(collection(db, "tracks"));
+  return parseTracksSnapshot(snap);
+}
+
+async function fetchMembersFromFirestore(): Promise<Member[]> {
+  if (!db) return liveMembersCache;
+  const snap = await getDocs(collection(db, "members"));
+  return parseMembersSnapshot(snap);
+}
+
+async function fetchNewsFromFirestore(): Promise<NewsItem[]> {
+  if (!db) return liveNewsCache;
+  const snap = await getDocs(collection(db, "news"));
+  return parseNewsSnapshot(snap);
 }
 
 async function fetchAppConfigFromFirestore(): Promise<AppConfig> {
-  if (!db) return DEFAULT_CONFIG;
+  if (!db) return liveConfigCache;
   const snap = await getDoc(doc(db, "config", "app"));
-  if (!snap.exists()) return DEFAULT_CONFIG;
+  if (!snap.exists()) return liveConfigCache;
   const data = snap.data() as Partial<AppConfig>;
-  return {
+  const nextConfig: AppConfig = {
     featuredAlbumId: data.featuredAlbumId?.trim() || DEFAULT_CONFIG.featuredAlbumId,
     featuredTrackId: data.featuredTrackId?.trim() || DEFAULT_CONFIG.featuredTrackId,
   };
+  liveConfigCache = nextConfig;
+  writeLocalCache(CACHE_KEYS.config, nextConfig);
+  return nextConfig;
+}
+
+// ==========================================
+// REAL-TIME FIRESTORE WEBSOCKET SUBSCRIPTION (`onSnapshot`)
+// ==========================================
+
+let realtimeAttached = false;
+
+function ensureRealtimeCatalogSync(queryClient: QueryClient) {
+  if (realtimeAttached || !db || typeof window === "undefined") return;
+  realtimeAttached = true;
+
+  try {
+    onSnapshot(
+      collection(db, "albums"),
+      (snap) => {
+        if (!snap.empty) {
+          const parsed = parseAlbumsSnapshot(snap);
+          queryClient.setQueryData(["catalog", "albums"], parsed);
+        }
+      },
+      () => {
+        /* ignore permission/offline listener errors */
+      },
+    );
+
+    onSnapshot(
+      collection(db, "tracks"),
+      (snap) => {
+        if (!snap.empty) {
+          const parsed = parseTracksSnapshot(snap);
+          queryClient.setQueryData(["catalog", "tracks"], parsed);
+        }
+      },
+      () => {},
+    );
+
+    onSnapshot(
+      collection(db, "members"),
+      (snap) => {
+        if (!snap.empty) {
+          const parsed = parseMembersSnapshot(snap);
+          queryClient.setQueryData(["catalog", "members"], parsed);
+        }
+      },
+      () => {},
+    );
+
+    onSnapshot(
+      collection(db, "news"),
+      (snap) => {
+        if (!snap.empty) {
+          const parsed = parseNewsSnapshot(snap);
+          queryClient.setQueryData(["catalog", "news"], parsed);
+        }
+      },
+      () => {},
+    );
+
+    onSnapshot(
+      doc(db, "config", "app"),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<AppConfig>;
+          const nextConfig: AppConfig = {
+            featuredAlbumId: data.featuredAlbumId?.trim() || DEFAULT_CONFIG.featuredAlbumId,
+            featuredTrackId: data.featuredTrackId?.trim() || DEFAULT_CONFIG.featuredTrackId,
+          };
+          liveConfigCache = nextConfig;
+          writeLocalCache(CACHE_KEYS.config, nextConfig);
+          queryClient.setQueryData(["catalog", "config"], nextConfig);
+        }
+      },
+      () => {},
+    );
+  } catch {
+    realtimeAttached = false;
+  }
 }
 
 export function useAlbums() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureRealtimeCatalogSync(queryClient);
+  }, [queryClient]);
+
   const query = useQuery({
     queryKey: ["catalog", "albums"],
     queryFn: fetchAlbumsFromFirestore,
-    initialData: staticAlbums,
+    initialData: () => liveAlbumsCache,
     enabled: isFirebaseConfigured && typeof window !== "undefined",
     staleTime: CATALOG_STALE_TIME,
   });
@@ -569,10 +762,15 @@ export function useAlbums() {
 }
 
 export function useTracks() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureRealtimeCatalogSync(queryClient);
+  }, [queryClient]);
+
   const query = useQuery({
     queryKey: ["catalog", "tracks"],
     queryFn: fetchTracksFromFirestore,
-    initialData: staticTracks,
+    initialData: () => liveTracksCache,
     enabled: isFirebaseConfigured && typeof window !== "undefined",
     staleTime: CATALOG_STALE_TIME,
   });
@@ -595,10 +793,15 @@ export function useTracks() {
 }
 
 export function useMembers() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureRealtimeCatalogSync(queryClient);
+  }, [queryClient]);
+
   const query = useQuery({
     queryKey: ["catalog", "members"],
     queryFn: fetchMembersFromFirestore,
-    initialData: staticMembers,
+    initialData: () => liveMembersCache,
     enabled: isFirebaseConfigured && typeof window !== "undefined",
     staleTime: CATALOG_STALE_TIME,
   });
@@ -619,10 +822,15 @@ export function useMembers() {
 }
 
 export function useNews() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureRealtimeCatalogSync(queryClient);
+  }, [queryClient]);
+
   const query = useQuery({
     queryKey: ["catalog", "news"],
     queryFn: fetchNewsFromFirestore,
-    initialData: staticNews,
+    initialData: () => liveNewsCache,
     enabled: isFirebaseConfigured && typeof window !== "undefined",
     staleTime: CATALOG_STALE_TIME,
   });
@@ -651,10 +859,15 @@ export function useNews() {
 }
 
 export function useAppConfig() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureRealtimeCatalogSync(queryClient);
+  }, [queryClient]);
+
   const query = useQuery({
     queryKey: ["catalog", "config"],
     queryFn: fetchAppConfigFromFirestore,
-    initialData: DEFAULT_CONFIG,
+    initialData: () => liveConfigCache,
     enabled: isFirebaseConfigured && typeof window !== "undefined",
     staleTime: CATALOG_STALE_TIME,
   });
@@ -667,7 +880,7 @@ export function useAppConfig() {
 }
 
 /**
- * Unified live catalog hook backed by Firestore + Staged Admin Drafts.
+ * Unified live catalog hook backed by Firestore + 0ms LocalStorage Snapshot + Staged Admin Drafts.
  */
 export function useCatalog() {
   const { data: albums } = useAlbums();
@@ -723,12 +936,13 @@ export function useCatalog() {
   const getTrackArtwork = useCallback(
     (track?: Track | { id?: string; albumId?: string } | null): string => {
       if (!track) return "";
-      const staticOrOverride = getSongArtwork(track);
-      if (staticOrOverride) return staticOrOverride;
+      const explicitSongOverride = track.id ? songImageOverrides[track.id]?.trim() : undefined;
+      if (explicitSongOverride) return explicitSongOverride;
       if (track.albumId) {
-        return getAlbum(track.albumId)?.cover?.trim() || "";
+        const liveCover = getAlbum(track.albumId)?.cover?.trim();
+        if (liveCover) return liveCover;
       }
-      return "";
+      return getSongArtwork(track);
     },
     [getAlbum],
   );
@@ -770,7 +984,8 @@ export interface SeedResult {
 
 /**
  * Seeds the verified local catalog (albums, tracks, news, members, and app config)
- * into Firestore. Requires Admin authentication per firestore.rules.
+ * into Firestore. Uses `{ merge: true }` so any cover artwork URLs or YouTube links
+ * you already added in Firestore are preserved and never wiped out!
  */
 export async function seedFirestoreCatalog(): Promise<SeedResult> {
   if (!db) {
@@ -780,41 +995,58 @@ export async function seedFirestoreCatalog(): Promise<SeedResult> {
   const batch = writeBatch(db);
 
   for (const album of staticAlbums) {
+    const existingLive = liveAlbumsCache.find((a) => a.id === album.id);
+    const resolvedCover = existingLive?.cover?.trim() || getAlbumArtwork(album.id);
     batch.set(
       doc(db, "albums", album.id),
       stripUndefined({
         ...album,
-        cover: getAlbumArtwork(album.id),
+        cover: resolvedCover,
       }),
+      { merge: true },
     );
   }
 
   for (const track of staticTracks) {
-    batch.set(doc(db, "tracks", track.id), stripUndefined(track));
+    const existingLive = liveTracksCache.find((t) => t.id === track.id);
+    batch.set(
+      doc(db, "tracks", track.id),
+      stripUndefined({
+        ...track,
+        ...(existingLive?.youtubeUrl ? { youtubeUrl: existingLive.youtubeUrl } : {}),
+        ...(existingLive?.audioUrl ? { audioUrl: existingLive.audioUrl } : {}),
+      }),
+      { merge: true },
+    );
   }
 
   for (const item of staticNews) {
-    const resolvedImage = getNewsImage(item.id);
+    const existingLive = liveNewsCache.find((n) => n.id === item.id);
+    const resolvedImage = existingLive?.image?.trim() || getNewsImage(item.id);
     batch.set(
       doc(db, "news", item.id),
       stripUndefined({
         ...item,
         ...(resolvedImage ? { image: resolvedImage } : {}),
       }),
+      { merge: true },
     );
   }
 
   for (const member of staticMembers) {
+    const existingLive = liveMembersCache.find((m) => m.id === member.id);
+    const resolvedImage = existingLive?.image?.trim() || getMemberImage(member.id);
     batch.set(
       doc(db, "members", member.id),
       stripUndefined({
         ...member,
-        image: getMemberImage(member.id),
+        image: resolvedImage,
       }),
+      { merge: true },
     );
   }
 
-  batch.set(doc(db, "config", "app"), DEFAULT_CONFIG);
+  batch.set(doc(db, "config", "app"), DEFAULT_CONFIG, { merge: true });
 
   await batch.commit();
 

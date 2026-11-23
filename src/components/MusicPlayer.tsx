@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useRouterState } from "@tanstack/react-router";
 import { Pause, Play, Shuffle, SkipBack, SkipForward } from "lucide-react";
 import { trackDuration } from "@/data/albums";
 import { useCatalog } from "@/lib/catalog";
@@ -6,6 +7,7 @@ import { usePlayer } from "@/lib/player";
 import { cn } from "@/lib/utils";
 import { ArtworkImage } from "./ArtworkImage";
 import { CurvedProgress } from "./CurvedProgress";
+import { FavoriteButton } from "./FavoriteButton";
 
 const SWIPE_THRESHOLD = 45;
 
@@ -14,6 +16,7 @@ export function MusicPlayer() {
     currentTrack,
     isPlaying,
     progress,
+    effectiveDuration,
     shuffle,
     expanded,
     toggle,
@@ -24,6 +27,7 @@ export function MusicPlayer() {
     setExpanded,
   } = usePlayer();
 
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [dragX, setDragX] = useState(0);
   const [swiping, setSwiping] = useState(false);
   const startX = useRef<number | null>(null);
@@ -32,18 +36,16 @@ export function MusicPlayer() {
 
   const { getAlbum, getTrackArtwork } = useCatalog();
 
-  if (!currentTrack) return null;
+  if (!currentTrack || pathname.startsWith("/admin")) return null;
 
   const album = getAlbum(currentTrack.albumId);
-  const total = trackDuration(currentTrack);
+  const total = effectiveDuration || trackDuration(currentTrack);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    // Prevent dragging or tap triggers if user clicked on any interactive control
     const target = e.target as HTMLElement | null;
     if (target?.closest('button, [role="slider"], input, a')) {
       return;
     }
-    // Only track if left mouse button or touch
     if (e.button !== 0 && e.pointerType === "mouse") return;
     startX.current = e.clientX;
     startY.current = e.clientY;
@@ -55,7 +57,6 @@ export function MusicPlayer() {
     const deltaX = e.clientX - startX.current;
     const deltaY = e.clientY - startY.current;
 
-    // Detect intentional horizontal drag vs vertical page scroll
     if (!swiping && Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
       setSwiping(true);
       moved.current = true;
@@ -67,19 +68,16 @@ export function MusicPlayer() {
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent) => {
+  const handlePointerUp = () => {
     if (startX.current === null) return;
 
     if (swiping) {
       if (dragX > SWIPE_THRESHOLD) {
-        // Swipe Right -> Next track
         next();
       } else if (dragX < -SWIPE_THRESHOLD) {
-        // Swipe Left -> Previous track
         previous();
       }
     } else if (!moved.current) {
-      // Direct tap on player surface opens full-screen player
       setExpanded(true);
     }
 
@@ -94,7 +92,7 @@ export function MusicPlayer() {
 
   return (
     <div
-      className="fixed inset-x-0 bottom-20 z-40 px-3 transition-opacity duration-200"
+      className="fixed inset-x-0 bottom-[4.35rem] z-40 px-3.5 transition-opacity duration-200"
       style={{ opacity: expanded ? 0 : 1, pointerEvents: expanded ? "none" : undefined }}
     >
       <div
@@ -107,39 +105,55 @@ export function MusicPlayer() {
           transition: swiping ? "none" : "transform 0.28s var(--ease-spring)",
         }}
         className={cn(
-          "glass-panel fade-up mx-auto max-w-lg overflow-hidden rounded-2xl p-2 cursor-pointer touch-pan-y select-none transition-shadow",
-          swiping && "ring-1 ring-primary/40 shadow-lg",
+          "glass-panel relative mx-auto max-w-md overflow-hidden rounded-[14px] px-2.5 pt-1.5 pb-0.5 cursor-pointer touch-pan-y select-none transition-shadow",
+          swiping && "ring-1 ring-primary/50 shadow-lg",
         )}
       >
-        <div className="flex items-center gap-2">
-          {/* Album artwork */}
-          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-surface border border-glass-border">
+        {/* Subtle internal ambient aura behind the Spotify-style bar */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-4 -bottom-2 h-6 opacity-35 blur-xl"
+          style={{
+            background:
+              "linear-gradient(90deg, var(--primary) 0%, oklch(0.76 0.23 330) 45%, var(--accent) 80%, var(--highlight) 100%)",
+          }}
+        />
+
+        <div className="relative flex items-center gap-2.5">
+          {/* Spotify-style rounded-square album cover */}
+          <div className="h-9 w-9 shrink-0 overflow-hidden rounded-[6px] border border-white/15 bg-surface shadow-md">
             <ArtworkImage
               src={getTrackArtwork(currentTrack)}
               alt={`${currentTrack.title} artwork`}
               kind="song"
               loading="lazy"
-              width={80}
-              height={80}
+              width={72}
+              height={72}
+              className="h-full w-full object-cover"
             />
           </div>
 
-          {/* Track info - tap opens player */}
+          {/* Compact Spotify-style Title • Artist/Album */}
           <div className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-bold leading-tight">
-              {currentTrack.title}
-            </span>
-            <span className="block truncate text-[10px] leading-tight text-muted-foreground">
-              IVE · {album?.title}
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-xs font-bold tracking-tight text-foreground">
+                {currentTrack.title}
+              </span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">•</span>
+              <span className="truncate text-[11px] font-medium text-muted-foreground">
+                {currentTrack.artist ?? "IVE"}
+              </span>
+            </div>
+            <span className="block truncate font-mono text-[9px] uppercase tracking-wider text-primary/90">
+              {album?.title ?? "IVE Archive"}
             </span>
           </div>
 
-          {/* Controls: Shuffle, Prev, Play/Pause, Next */}
+          {/* Right Controls: Shuffle, Favorite, Prev, Play/Pause, Next */}
           <div
-            className="flex shrink-0 items-center gap-1"
+            className="flex shrink-0 items-center gap-0.5"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {/* Shuffle toggle button */}
             <button
               type="button"
               aria-label={shuffle ? "Shuffle on" : "Shuffle off"}
@@ -150,19 +164,25 @@ export function MusicPlayer() {
                 toggleShuffle();
               }}
               className={cn(
-                "press relative grid h-8 w-8 place-items-center rounded-full transition-colors",
+                "press relative grid h-7 w-7 place-items-center rounded-full transition-colors",
                 shuffle
-                  ? "bg-primary/20 text-primary font-bold"
+                  ? "text-primary"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              <Shuffle size={14} />
+              <Shuffle size={13} />
               {shuffle && (
-                <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-primary" />
+                <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-primary" />
               )}
             </button>
 
-            {/* Previous track */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <FavoriteButton kind="song" id={currentTrack.id} size="sm" />
+            </div>
+
             <button
               type="button"
               aria-label="Previous track"
@@ -171,12 +191,11 @@ export function MusicPlayer() {
                 e.stopPropagation();
                 previous();
               }}
-              className="press grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:text-foreground"
+              className="press grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:text-foreground"
             >
-              <SkipBack size={15} />
+              <SkipBack size={14} />
             </button>
 
-            {/* Play / Pause */}
             <button
               type="button"
               aria-label={isPlaying ? "Pause" : "Play"}
@@ -185,12 +204,15 @@ export function MusicPlayer() {
                 e.stopPropagation();
                 toggle();
               }}
-              className="press grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground glow"
+              className="press grid h-8 w-8 place-items-center rounded-full text-foreground hover:text-primary"
             >
-              {isPlaying ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+              {isPlaying ? (
+                <Pause size={17} className="fill-current" />
+              ) : (
+                <Play size={17} className="ml-0.5 fill-current" />
+              )}
             </button>
 
-            {/* Next track */}
             <button
               type="button"
               aria-label="Next track"
@@ -199,20 +221,20 @@ export function MusicPlayer() {
                 e.stopPropagation();
                 next();
               }}
-              className="press grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:text-foreground"
+              className="press grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:text-foreground"
             >
-              <SkipForward size={15} />
+              <SkipForward size={14} />
             </button>
           </div>
         </div>
 
-        {/* Curved Progress Track */}
+        {/* Flush Curly Glowing Aura Progress Seam between Mini Player and BottomNav */}
         <div
-          className="mt-1 px-0.5"
+          className="relative -mx-1 mt-0.5"
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <CurvedProgress progress={progress} total={total} onSeek={seek} variant="compact" />
+          <CurvedProgress progress={progress} total={total} onSeek={seek} variant="docked" />
         </div>
       </div>
     </div>

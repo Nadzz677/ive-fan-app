@@ -5,7 +5,7 @@ interface CurvedProgressProps {
   progress: number; // in seconds
   total: number; // in seconds
   onSeek: (seconds: number) => void;
-  variant?: "compact" | "expanded";
+  variant?: "compact" | "docked" | "expanded";
   className?: string;
 }
 
@@ -17,6 +17,7 @@ export function CurvedProgress({
   className = "",
 }: CurvedProgressProps) {
   const gradId = useId();
+  const auraGradId = useId();
   const glowId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -58,10 +59,15 @@ export function CurvedProgress({
 
   // High-definition organic continuous wave path across 0..1000
   const pathD =
-    "M 0 20 C 125 6, 125 34, 250 20 C 375 6, 375 34, 500 20 C 625 6, 625 34, 750 20 C 875 6, 875 34, 1000 20";
+    variant === "docked"
+      ? "M 0 20 C 100 7, 100 33, 200 20 C 300 7, 300 33, 400 20 C 500 7, 500 33, 600 20 C 700 7, 700 33, 800 20 C 900 7, 900 33, 1000 20"
+      : "M 0 20 C 125 6, 125 34, 250 20 C 375 6, 375 34, 500 20 C 625 6, 625 34, 750 20 C 875 6, 875 34, 1000 20";
 
-  const heightClass = variant === "compact" ? "h-4" : "h-8";
-  const strokeWidth = variant === "compact" ? 3.5 : 5.5;
+  const heightClass =
+    variant === "docked" ? "h-3.5" : variant === "compact" ? "h-4" : "h-8";
+  const strokeWidth =
+    variant === "docked" ? 3.4 : variant === "compact" ? 3.6 : 5.5;
+  const dashOffset = 1000 - (pct / 100) * 1000;
 
   return (
     <div
@@ -84,26 +90,41 @@ export function CurvedProgress({
         className="w-full h-full overflow-visible pointer-events-none"
       >
         <defs>
+          {/* Vivid multi-color core gradient */}
           <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="var(--primary)" />
-            <stop offset="60%" stopColor="var(--accent)" />
+            <stop offset="32%" stopColor="oklch(0.78 0.22 332)" />
+            <stop offset="66%" stopColor="var(--accent)" />
             <stop offset="100%" stopColor="var(--highlight)" />
           </linearGradient>
-          <filter id={glowId} x="-20%" y="-40%" width="140%" height="180%">
-            <feGaussianBlur stdDeviation={variant === "compact" ? "3" : "5"} result="glow" />
-            <feComposite in="SourceGraphic" in2="glow" operator="over" />
+
+          {/* Soft outer aura bloom gradient */}
+          <linearGradient id={auraGradId} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.85" />
+            <stop offset="40%" stopColor="oklch(0.76 0.24 325)" stopOpacity="0.95" />
+            <stop offset="75%" stopColor="var(--accent)" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="var(--highlight)" stopOpacity="0.95" />
+          </linearGradient>
+
+          {/* Dual-stage Gaussian glow aura filter */}
+          <filter id={glowId} x="-25%" y="-120%" width="150%" height="340%">
+            <feGaussianBlur
+              in="SourceGraphic"
+              stdDeviation={variant === "expanded" ? "7" : "4.8"}
+              result="wideAura"
+            />
+            <feGaussianBlur
+              in="SourceGraphic"
+              stdDeviation={variant === "expanded" ? "2.6" : "1.8"}
+              result="innerBloom"
+            />
+            <feMerge>
+              <feMergeNode in="wideAura" />
+              <feMergeNode in="innerBloom" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
           </filter>
         </defs>
-
-        {/* Ambient subtle backdrop trace */}
-        <path
-          d={pathD}
-          fill="none"
-          stroke="var(--glass-border)"
-          strokeWidth={strokeWidth + (variant === "compact" ? 2 : 3)}
-          strokeLinecap="round"
-          className="opacity-40"
-        />
 
         {/* Inactive Background Track (Curved ribbon) */}
         <path
@@ -112,10 +133,23 @@ export function CurvedProgress({
           stroke="var(--secondary)"
           strokeWidth={strokeWidth}
           strokeLinecap="round"
-          className="opacity-80 transition-colors"
+          className="opacity-65 transition-colors"
         />
 
-        {/* Played Active Track with fluid gradient and subtle bloom */}
+        {/* Wide Colorful Aura Emission Layer (Underneath active wave) */}
+        <path
+          d={pathD}
+          fill="none"
+          stroke={`url(#${auraGradId})`}
+          strokeWidth={strokeWidth * 2.5}
+          strokeLinecap="round"
+          pathLength={1000}
+          strokeDasharray={1000}
+          strokeDashoffset={dashOffset}
+          className="opacity-65 blur-[3px] transition-[stroke-dashoffset] duration-150 ease-out"
+        />
+
+        {/* Played Active Track with multi-color gradient and dual bloom filter */}
         <path
           d={pathD}
           fill="none"
@@ -124,7 +158,7 @@ export function CurvedProgress({
           strokeLinecap="round"
           pathLength={1000}
           strokeDasharray={1000}
-          strokeDashoffset={1000 - (pct / 100) * 1000}
+          strokeDashoffset={dashOffset}
           className="transition-[stroke-dashoffset] duration-150 ease-out"
           filter={`url(#${glowId})`}
         />

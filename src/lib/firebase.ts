@@ -1,6 +1,12 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from "firebase/firestore";
 
 const env = import.meta.env as Record<string, string | undefined>;
 
@@ -32,7 +38,17 @@ let firebaseAuth: Auth | null = null;
 
 if (typeof window !== "undefined" && isFirebaseConfigured) {
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-  firestore = getFirestore(app);
+  try {
+    // Enable persistent IndexedDB cache so database covers & tracks load at 0ms offline & across restarts
+    firestore = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    });
+  } catch {
+    // Already initialized (e.g. Vite HMR reload)
+    firestore = getFirestore(app);
+  }
   firebaseAuth = getAuth(app);
 }
 

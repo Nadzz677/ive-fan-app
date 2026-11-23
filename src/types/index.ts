@@ -52,6 +52,10 @@ export interface Track {
   lyricsAvailable?: boolean;
   lyricsKorean?: string;
   lyricsRomanized?: string;
+  /** Optional YouTube URL or 11-char Video ID for real audio playback. */
+  youtubeUrl?: string;
+  /** Optional direct audio stream URL (.mp3, .m4a, .ogg). */
+  audioUrl?: string;
 }
 
 export interface Album {
