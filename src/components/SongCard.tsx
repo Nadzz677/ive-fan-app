@@ -1,16 +1,23 @@
+import { memo } from "react";
 import { Pause, Play } from "lucide-react";
 import type { Track } from "@/types";
 import { trackDuration } from "@/data/albums";
 import { useCatalog } from "@/lib/catalog";
 import { formatDuration } from "@/lib/format";
-import { usePlayer } from "@/lib/player";
+import { usePlayerControls } from "@/lib/player";
 import { ArtworkImage } from "./ArtworkImage";
 import { FavoriteButton } from "./FavoriteButton";
 import { EqualizerBars } from "./EqualizerBars";
 import { cn } from "@/lib/utils";
 
-export function SongCard({ track, queue }: { track: Track; queue?: string[] }) {
-  const { currentTrack, isPlaying, playTrack, toggle } = usePlayer();
+export const SongCard = memo(function SongCard({
+  track,
+  queue,
+}: {
+  track: Track;
+  queue?: string[];
+}) {
+  const { currentTrack, isPlaying, playTrack, toggle } = usePlayerControls();
   const { getAlbum, getTrackArtwork } = useCatalog();
   const album = getAlbum(track.albumId);
   const isCurrent = currentTrack?.id === track.id;
@@ -67,4 +74,4 @@ export function SongCard({ track, queue }: { track: Track; queue?: string[] }) {
       </button>
     </div>
   );
-}
+});

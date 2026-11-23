@@ -47,7 +47,7 @@ import {
   useCatalog,
   useStagedCatalog,
 } from "@/lib/catalog";
-import { extractYouTubeId } from "@/lib/player";
+import { extractYouTubeId, resolveDirectAudioUrl } from "@/lib/player";
 import { ArtworkImage } from "@/components/ArtworkImage";
 import { cn } from "@/lib/utils";
 import type { Album, AlbumType, Member, NewsItem, Track, TrackLanguage } from "@/types";
@@ -141,6 +141,11 @@ export function AdminStudioView() {
   const [albumDesc, setAlbumDesc] = useState("");
 
   // Track Editor form (supports both Add New & Edit Existing + YouTube / Audio Link)
+  const [trackViewFilter, setTrackViewFilter] = useState<string>("ALL");
+  const [trackAudioStatusFilter, setTrackAudioStatusFilter] = useState<"all" | "linked" | "missing">(
+    "all",
+  );
+  const [trackSearchQuery, setTrackSearchQuery] = useState("");
   const [selectedAlbumId, setSelectedAlbumId] = useState(albums[0]?.id ?? "looks-can-kill");
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [trackTitle, setTrackTitle] = useState("");
@@ -479,10 +484,27 @@ export function AdminStudioView() {
   const activeFeaturedAlbum = albums.find((a) => a.id === config.featuredAlbumId) ?? albums[0];
   const activeFeaturedTrack = tracks.find((t) => t.id === config.featuredTrackId) ?? tracks[0];
   const currentAlbumForTracks = albums.find((a) => a.id === selectedAlbumId) ?? albums[0];
-  const selectedAlbumTracks = getAlbumTracks(selectedAlbumId);
+  const baseDisplayedTracks =
+    trackViewFilter === "ALL" ? tracks : getAlbumTracks(trackViewFilter);
+  const selectedAlbumTracks = baseDisplayedTracks.filter((t) => {
+    const hasLink = Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl));
+    if (trackAudioStatusFilter === "linked" && !hasLink) return false;
+    if (trackAudioStatusFilter === "missing" && hasLink) return false;
+    if (trackSearchQuery.trim()) {
+      const q = trackSearchQuery.toLowerCase().trim();
+      const parentTitle = albums.find((a) => a.id === t.albumId)?.title.toLowerCase() ?? "";
+      return (
+        t.title.toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q) ||
+        parentTitle.includes(q)
+      );
+    }
+    return true;
+  });
   const parsedYoutubeIdPreview = extractYouTubeId(trackYoutubeUrl);
+  const parsedDirectAudioPreview = resolveDirectAudioUrl(trackAudioUrl);
   const tracksWithAudioCount = tracks.filter(
-    (t) => Boolean(extractYouTubeId(t.youtubeUrl) || t.audioUrl),
+    (t) => Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl)),
   ).length;
 
   const navItems: {
@@ -1373,30 +1395,58 @@ export function AdminStudioView() {
           )}
 
           {/* ================================================================= */}
-          {/* TAB 2: SONGS, YOUTUBE AUDIO & LYRICS                              */}
+          {/* TAB 2: SONGS, YOUTUBE AUDIO & LYRICS (ALL SONGS OR BY ALBUM)      */}
           {/* ================================================================= */}
           {tab === "tracks" && (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-              {/* Left 7 Cols: Album Selector + Tracklist Table */}
+              {/* Left 7 Cols: Master Filter Bar (All Songs vs By Album) + Tracklist Table */}
               <div className="space-y-4 lg:col-span-7">
-                <div className={cn("rounded-xl border p-4", panelBg)}>
-                  <label className={labelClass}>Filter Tracklist by Release</label>
-                  <div className="flex items-center gap-3">
-                    {currentAlbumForTracks && (
-                      <div className={cn("h-10 w-10 shrink-0 overflow-hidden rounded-lg border", borderClass)}>
-                        <ArtworkImage
-                          src={currentAlbumForTracks.cover}
-                          alt={currentAlbumForTracks.title}
-                          kind="album"
-                          className="h-full w-full object-cover"
-                        />
-                      </div>
-                    )}
+                <div className={cn("space-y-3 rounded-xl border p-4", panelBg)}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className={cn(labelClass, "mb-0")}>
+                      Browse Mode: All Songs ({tracks.length}) or By Album
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      {(
+                        [
+                          { id: "all", label: `All (${tracks.length})` },
+                          { id: "linked", label: `Audio Linked (${tracksWithAudioCount})` },
+                          {
+                            id: "missing",
+                            label: `Needs Audio (${tracks.length - tracksWithAudioCount})`,
+                          },
+                        ] as const
+                      ).map((pill) => (
+                        <button
+                          key={pill.id}
+                          type="button"
+                          onClick={() => setTrackAudioStatusFilter(pill.id)}
+                          className={cn(
+                            "rounded-md px-2.5 py-1 font-mono text-[10px] font-semibold transition-colors",
+                            trackAudioStatusFilter === pill.id
+                              ? "bg-indigo-600 text-white"
+                              : secondaryBtn,
+                          )}
+                        >
+                          {pill.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                     <select
-                      value={selectedAlbumId}
-                      onChange={(e) => setSelectedAlbumId(e.target.value)}
+                      value={trackViewFilter}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTrackViewFilter(val);
+                        if (val !== "ALL") setSelectedAlbumId(val);
+                      }}
                       className={cn(inputClass, "font-medium")}
                     >
+                      <option value="ALL">
+                        ★ All Songs Across All Releases ({tracks.length} tracks)
+                      </option>
                       {albums.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.title} ({a.releaseDate.slice(0, 4)}) — {getAlbumTracks(a.id).length}{" "}
@@ -1404,6 +1454,14 @@ export function AdminStudioView() {
                         </option>
                       ))}
                     </select>
+
+                    <input
+                      type="text"
+                      value={trackSearchQuery}
+                      onChange={(e) => setTrackSearchQuery(e.target.value)}
+                      placeholder="Quick filter by song or album title..."
+                      className={inputClass}
+                    />
                   </div>
                 </div>
 
@@ -1411,27 +1469,29 @@ export function AdminStudioView() {
                   <div className={cn("flex items-center justify-between border-b px-5 py-3.5", borderClass)}>
                     <div>
                       <h2 className={cn("text-sm font-semibold", headingText)}>
-                        {currentAlbumForTracks?.title ?? "Album"} Tracklist (
-                        {selectedAlbumTracks.length})
+                        {trackViewFilter === "ALL"
+                          ? `Complete Master Song Index (${selectedAlbumTracks.length} shown)`
+                          : `${albums.find((a) => a.id === trackViewFilter)?.title ?? "Album"} Tracklist (${selectedAlbumTracks.length})`}
                       </h2>
                       <p className={cn("text-xs", subText)}>
-                        Attach YouTube links for real audio streaming, or edit track metadata and
-                        lyrics.
+                        Click Edit on any song to attach Direct Cloud Audio (0ms instant stream) or
+                        YouTube links.
                       </p>
                     </div>
                   </div>
 
                   {selectedAlbumTracks.length === 0 ? (
                     <div className={cn("p-8 text-center text-xs", subText)}>
-                      No tracks linked to this release yet. Use the form on the right to add one.
+                      No tracks match the current filter.
                     </div>
                   ) : (
-                    <div className={cn("divide-y", dividerClass)}>
+                    <div className={cn("max-h-[680px] overflow-y-auto divide-y", dividerClass)}>
                       {selectedAlbumTracks.map((t, idx) => {
                         const isFeaturedSong = config.featuredTrackId === t.id;
                         const isEditing = editingTrackId === t.id;
                         const ytId = extractYouTubeId(t.youtubeUrl);
-                        const hasAudio = Boolean(ytId || t.audioUrl);
+                        const directUrl = resolveDirectAudioUrl(t.audioUrl);
+                        const parentAlbumObj = albums.find((a) => a.id === t.albumId);
                         return (
                           <div
                             key={t.id}
@@ -1441,18 +1501,34 @@ export function AdminStudioView() {
                             )}
                           >
                             <div className="flex min-w-0 flex-1 items-center gap-3.5">
-                              <span className={cn("w-6 shrink-0 font-mono text-xs font-semibold", mutedMonoText)}>
-                                {String(idx + 1).padStart(2, "0")}
-                              </span>
+                              {trackViewFilter === "ALL" && parentAlbumObj ? (
+                                <div className={cn("h-9 w-9 shrink-0 overflow-hidden rounded-md border", borderClass)}>
+                                  <ArtworkImage
+                                    src={parentAlbumObj.cover}
+                                    alt={parentAlbumObj.title}
+                                    kind="album"
+                                    className="h-full w-full object-cover"
+                                  />
+                                </div>
+                              ) : (
+                                <span className={cn("w-6 shrink-0 font-mono text-xs font-semibold", mutedMonoText)}>
+                                  {String(idx + 1).padStart(2, "0")}
+                                </span>
+                              )}
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                   <p className={cn("truncate text-sm font-semibold", headingText)}>
                                     {t.title}
                                   </p>
-                                  {hasAudio && (
+                                  {directUrl && (
+                                    <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-emerald-600 dark:text-emerald-300">
+                                      ⚡ Direct CDN Audio
+                                    </span>
+                                  )}
+                                  {ytId && (
                                     <span className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-rose-600 dark:text-rose-300">
                                       <Play size={8} className="fill-current" />
-                                      {ytId ? `YT: ${ytId}` : "Audio Linked"}
+                                      YT: {ytId}
                                     </span>
                                   )}
                                   {t.isTitleTrack && (
@@ -1477,8 +1553,9 @@ export function AdminStudioView() {
                                   )}
                                 </div>
                                 <p className={cn("mt-0.5 font-mono text-[11px]", subText)}>
+                                  {parentAlbumObj ? `${parentAlbumObj.title} · ` : ""}
                                   {formatDurationMmSs(t.duration)} ({t.duration ?? 180}s) ·{" "}
-                                  {t.language ?? "Korean"} · id: {t.id}
+                                  {t.language ?? "Korean"}
                                 </p>
                               </div>
                             </div>
@@ -1590,39 +1667,47 @@ export function AdminStudioView() {
                     </div>
                   </div>
 
-                  {/* YouTube Link / Real Audio Stream Box */}
+                  {/* Direct Cloud Audio & YouTube Stream Box */}
                   <div className={cn("space-y-3 rounded-lg border p-3.5", subPanelBg)}>
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
                       <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
                         <Volume2 size={13} /> Real Song Playback Source
                       </span>
-                      {parsedYoutubeIdPreview && (
-                        <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-600 dark:text-emerald-300">
-                          ✓ YouTube ID: {parsedYoutubeIdPreview}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {parsedDirectAudioPreview && (
+                          <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-600 dark:text-emerald-300">
+                            ⚡ 0ms Direct Audio Ready
+                          </span>
+                        )}
+                        {parsedYoutubeIdPreview && (
+                          <span className="rounded bg-rose-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-rose-600 dark:text-rose-300">
+                            ✓ YT ID: {parsedYoutubeIdPreview}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div>
                       <label className={labelClass}>
-                        YouTube URL or 11-Char Video ID (Recommended)
+                        Option 1 (Fastest · 0ms Latency): Direct Audio / Cloud URL (.mp3, .m4a,
+                        Dropbox, Google Drive, Catbox, Cloudinary, Firebase Storage)
                       </label>
                       <input
-                        value={trackYoutubeUrl}
-                        onChange={(e) => setTrackYoutubeUrl(e.target.value)}
-                        placeholder="https://www.youtube.com/watch?v=Y8JFxS1HlDo or youtu.be/..."
+                        value={trackAudioUrl}
+                        onChange={(e) => setTrackAudioUrl(e.target.value)}
+                        placeholder="https://files.catbox.moe/xxx.mp3 or Dropbox / Google Drive share link"
                         className={inputClass}
                       />
                     </div>
 
                     <div>
                       <label className={labelClass}>
-                        Direct Audio Stream URL (Optional .mp3 / .m4a fallback)
+                        Option 2: YouTube URL or 11-Char Video ID
                       </label>
                       <input
-                        value={trackAudioUrl}
-                        onChange={(e) => setTrackAudioUrl(e.target.value)}
-                        placeholder="https://.../track.mp3 (optional)"
+                        value={trackYoutubeUrl}
+                        onChange={(e) => setTrackYoutubeUrl(e.target.value)}
+                        placeholder="https://www.youtube.com/watch?v=Y8JFxS1HlDo or youtu.be/..."
                         className={inputClass}
                       />
                     </div>

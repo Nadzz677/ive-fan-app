@@ -33,6 +33,7 @@ export function MusicPlayer() {
   const startX = useRef<number | null>(null);
   const startY = useRef<number | null>(null);
   const moved = useRef(false);
+  const lastExpandToggleRef = useRef<number>(0);
 
   const { getAlbum, getTrackArtwork } = useCatalog();
 
@@ -78,6 +79,7 @@ export function MusicPlayer() {
         previous();
       }
     } else if (!moved.current) {
+      lastExpandToggleRef.current = Date.now();
       setExpanded(true);
     }
 
@@ -202,6 +204,7 @@ export function MusicPlayer() {
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
+                if (expanded || Date.now() - lastExpandToggleRef.current < 320) return;
                 toggle();
               }}
               className="press grid h-8 w-8 place-items-center rounded-full text-foreground hover:text-primary"

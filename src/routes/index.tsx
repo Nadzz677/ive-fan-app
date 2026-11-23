@@ -3,7 +3,7 @@ import { ArrowRight, ArrowUpRight, Disc3, Play, Settings } from "lucide-react";
 import { getNewsImage } from "@/data/imageAssets";
 import { useCatalog } from "@/lib/catalog";
 import { formatReleaseDate } from "@/lib/format";
-import { usePlayer } from "@/lib/player";
+import { usePlayerControls } from "@/lib/player";
 import { ArtworkImage } from "@/components/ArtworkImage";
 import { MemberCard } from "@/components/MemberCard";
 import { SongCard } from "@/components/SongCard";
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
-  const { playTrack } = usePlayer();
+  const { playTrack } = usePlayerControls();
   const { albums, tracks, members, config, getAlbum, getTrack } = useCatalog();
   const featuredAlbum = getAlbum(config.featuredAlbumId) ?? albums[0]!;
   const featuredTrack = getTrack(config.featuredTrackId) ?? tracks[0]!;

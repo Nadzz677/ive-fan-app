@@ -22,7 +22,7 @@ import { ArtworkImage } from "./ArtworkImage";
 import { FavoriteButton } from "./FavoriteButton";
 import { CurvedProgress } from "./CurvedProgress";
 
-const DISMISS_THRESHOLD = 120;
+const DISMISS_THRESHOLD = 110;
 
 export function ExpandedPlayer() {
   const {
@@ -31,6 +31,7 @@ export function ExpandedPlayer() {
     progress,
     effectiveDuration,
     hasRealAudio,
+    audioSourceKind,
     shuffle,
     repeat,
     expanded,
@@ -45,56 +46,47 @@ export function ExpandedPlayer() {
   } = usePlayer();
 
   const [drag, setDrag] = useState(0);
-  const [closing, setClosing] = useState(false);
   const [viewMode, setViewMode] = useState<"artwork" | "lyrics">("artwork");
   const [lyricLang, setLyricLang] = useState<"korean" | "romanized">("korean");
   const startY = useRef<number | null>(null);
+  const lastCloseAtRef = useRef<number>(0);
 
   useEffect(() => {
     if (!expanded) {
       setDrag(0);
-      setClosing(false);
     }
-  }, [expanded]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    if (expanded) {
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = "";
-      };
-    }
-    return;
   }, [expanded]);
 
   const { getAlbum, getTrackArtwork } = useCatalog();
 
-  if (!expanded || !currentTrack) return null;
+  // Keep the modal mounted whenever a track is active so opening/closing uses pure GPU transforms
+  // and NEVER triggers a DOM mount/unmount or body-overflow reflow that pauses the WebView audio!
+  if (!currentTrack) return null;
 
   const album = getAlbum(currentTrack.albumId);
   const total = effectiveDuration || trackDuration(currentTrack);
 
   const close = () => {
-    setClosing(true);
-    window.setTimeout(() => {
-      setExpanded(false);
-      setClosing(false);
-    }, 200);
+    lastCloseAtRef.current = Date.now();
+    setDrag(0);
+    setExpanded(false);
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
+    if (!expanded) return;
     if ((e.target as HTMLElement).closest("button, a, input, [role='button']")) {
       return;
     }
     startY.current = e.clientY;
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
+
   const onPointerMove = (e: React.PointerEvent) => {
-    if (startY.current === null) return;
+    if (!expanded || startY.current === null) return;
     const delta = e.clientY - startY.current;
     setDrag(delta > 0 ? delta : 0);
   };
+
   const onPointerUp = () => {
     if (startY.current === null) return;
     startY.current = null;
@@ -103,28 +95,29 @@ export function ExpandedPlayer() {
   };
 
   const dragging = startY.current !== null;
-  const offset = closing ? window.innerHeight : drag;
-  const scale = closing ? 0.94 : Math.max(0.9, 1 - drag / 1600);
-  const opacity = closing ? 0 : Math.max(0.35, 1 - drag / 700);
-
   const activeLyrics =
     lyricLang === "korean" ? currentTrack.lyricsKorean : currentTrack.lyricsRomanized;
 
   return (
     <div
       role="dialog"
-      aria-modal="true"
+      aria-modal={expanded}
+      aria-hidden={!expanded}
       aria-label="Now playing"
-      className="fixed inset-0 z-50 overflow-hidden"
       style={{
-        transform: `translateY(${offset}px) scale(${scale})`,
-        opacity,
-        transition: dragging ? "none" : "transform 0.34s var(--ease-spring), opacity 0.28s ease",
-        animation: closing ? undefined : "player-rise 0.34s var(--ease-spring) both",
+        transform: expanded
+          ? `translate3d(0, ${drag}px, 0) scale(${Math.max(0.92, 1 - drag / 1600)})`
+          : "translate3d(0, 104%, 0) scale(0.96)",
+        opacity: expanded ? Math.max(0.35, 1 - drag / 700) : 0,
+        pointerEvents: expanded ? "auto" : "none",
+        transition: dragging
+          ? "none"
+          : "transform 0.36s var(--ease-spring), opacity 0.26s ease",
       }}
+      className="fixed inset-0 z-50 overflow-hidden overscroll-contain will-change-transform"
     >
       <div className="stage-gradient absolute inset-0" aria-hidden="true" />
-      <div className="relative flex h-full flex-col overflow-y-auto px-5 pb-8 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="relative flex h-full flex-col overflow-y-auto overscroll-contain px-5 pb-8 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Drag handle / header */}
         <div
           className="shrink-0 select-none pb-2"
@@ -133,13 +126,14 @@ export function ExpandedPlayer() {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <div className="mx-auto h-1.5 w-12 rounded-full bg-foreground/25 cursor-grab" />
+          <div className="mx-auto h-1.5 w-12 cursor-grab rounded-full bg-foreground/25" />
           <div className="mt-3 flex items-center justify-between">
             <button
               type="button"
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
+                e.preventDefault();
                 close();
               }}
               aria-label="Minimize player"
@@ -193,15 +187,15 @@ export function ExpandedPlayer() {
           </div>
         </div>
 
-        <div className="fade-up mx-auto mt-2 w-full max-w-sm flex-1 flex flex-col justify-between">
+        <div className="mx-auto mt-2 flex w-full max-w-sm flex-1 flex-col justify-between">
           {/* Main Visual Display: Glowing Artwork OR Lyrics Panel */}
           {viewMode === "artwork" ? (
             <div className="relative my-auto flex flex-col items-center">
               {/* Outer Luminous Ambient Aura (Pulses gently with music) */}
               <div
                 className={cn(
-                  "absolute inset-0 -m-3 rounded-[2.8rem] opacity-70 blur-2xl transition-all duration-700 pointer-events-none",
-                  isPlaying ? "album-glow-aura" : "opacity-30 blur-xl scale-95",
+                  "pointer-events-none absolute inset-0 -m-3 rounded-[2.8rem] opacity-70 blur-2xl transition-all duration-700",
+                  isPlaying && expanded ? "album-glow-aura" : "scale-95 opacity-30 blur-xl",
                 )}
                 style={{
                   background:
@@ -210,12 +204,12 @@ export function ExpandedPlayer() {
               />
 
               {/* Perimeter Light Beam Shell */}
-              <div className="relative aspect-square w-full max-w-[320px] rounded-[2.2rem] p-[2.5px] overflow-hidden shadow-2xl">
+              <div className="relative aspect-square w-full max-w-[320px] overflow-hidden rounded-[2.2rem] p-[2.5px] shadow-2xl">
                 {/* Rotating conic light beam traveling around the perimeter */}
                 <div
                   className={cn(
                     "absolute -inset-[100%] transition-opacity duration-500",
-                    isPlaying ? "album-beam-active" : "album-beam-paused",
+                    isPlaying && expanded ? "album-beam-active" : "album-beam-paused",
                   )}
                   style={{
                     background:
@@ -224,8 +218,8 @@ export function ExpandedPlayer() {
                 />
 
                 {/* Inner Card Frame */}
-                <div className="relative h-full w-full rounded-[2.05rem] bg-card/90 backdrop-blur-md p-1.5 overflow-hidden">
-                  <div className="h-full w-full rounded-[1.75rem] overflow-hidden">
+                <div className="relative h-full w-full overflow-hidden rounded-[2.05rem] bg-card/90 p-1.5 backdrop-blur-md">
+                  <div className="h-full w-full overflow-hidden rounded-[1.75rem]">
                     <ArtworkImage
                       src={getTrackArtwork(currentTrack)}
                       alt={`${currentTrack.title} album artwork`}
@@ -234,7 +228,7 @@ export function ExpandedPlayer() {
                       height={1024}
                       fallbackIconSize={46}
                       showEmptyLabel
-                      className="rounded-[1.75rem] transition-transform duration-500 shadow-inner"
+                      className="rounded-[1.75rem] shadow-inner transition-transform duration-500"
                       containerClassName="rounded-[1.75rem] border border-glass-border bg-card/60"
                     />
                   </div>
@@ -243,26 +237,24 @@ export function ExpandedPlayer() {
             </div>
           ) : (
             /* Lyrics View with glowing frame and language toggle */
-            <div className="relative my-auto flex flex-col h-[320px] w-full max-w-[320px] mx-auto">
-              {/* Ambient aura behind lyrics card */}
+            <div className="relative mx-auto my-auto flex h-[320px] w-full max-w-[320px] flex-col">
               <div
-                className="absolute inset-0 -m-2 rounded-[2.4rem] opacity-40 blur-xl pointer-events-none"
+                className="pointer-events-none absolute inset-0 -m-2 rounded-[2.4rem] opacity-40 blur-xl"
                 style={{
                   background:
                     "radial-gradient(circle, var(--primary) 0%, var(--accent) 60%, transparent 80%)",
                 }}
               />
 
-              <div className="glass-panel relative flex h-full flex-col rounded-[2rem] p-4 shadow-xl border border-glass-border overflow-hidden">
-                {/* Lyrics Header: Language Toggle */}
-                <div className="flex items-center justify-between pb-3 border-b border-glass-border">
+              <div className="glass-panel relative flex h-full flex-col overflow-hidden rounded-[2rem] border border-glass-border p-4 shadow-xl">
+                <div className="flex items-center justify-between border-b border-glass-border pb-3">
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
                     <Sparkles size={13} />
                     <span>Lyrics</span>
                   </span>
 
                   {currentTrack.lyricsAvailable && (
-                    <div className="flex items-center gap-1 rounded-full bg-surface/80 p-0.5 border border-glass-border">
+                    <div className="flex items-center gap-1 rounded-full border border-glass-border bg-surface/80 p-0.5">
                       <button
                         type="button"
                         onClick={() => setLyricLang("korean")}
@@ -291,17 +283,16 @@ export function ExpandedPlayer() {
                   )}
                 </div>
 
-                {/* Lyrics Body */}
                 <div className="flex-1 overflow-y-auto py-3 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {currentTrack.lyricsAvailable && activeLyrics ? (
-                    <p className="whitespace-pre-line text-sm font-medium leading-relaxed text-foreground/90 select-text animate-in fade-in duration-200">
+                    <p className="select-text whitespace-pre-line text-sm font-medium leading-relaxed text-foreground/90">
                       {activeLyrics}
                     </p>
                   ) : (
-                    <div className="flex h-full flex-col items-center justify-center text-center px-4">
-                      <FileText size={28} className="text-muted-foreground/60 mb-2" />
+                    <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+                      <FileText size={28} className="mb-2 text-muted-foreground/60" />
                       <p className="text-xs font-semibold text-foreground">
-                        Lyrics aren't available yet
+                        Lyrics aren&apos;t available yet
                       </p>
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         Official lyrics will be added as releases update.
@@ -318,10 +309,12 @@ export function ExpandedPlayer() {
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h2 className="truncate text-2xl font-bold leading-tight">{currentTrack.title}</h2>
+                  <h2 className="truncate text-2xl font-bold leading-tight">
+                    {currentTrack.title}
+                  </h2>
                   {hasRealAudio && (
                     <span className="shrink-0 rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-primary">
-                      ● Live Audio
+                      {audioSourceKind === "direct" ? "⚡ Direct HD Audio" : "● Live Audio"}
                     </span>
                   )}
                 </div>
@@ -338,14 +331,17 @@ export function ExpandedPlayer() {
           {/* Curved Progress Bar */}
           <div className="mt-4">
             <CurvedProgress progress={progress} total={total} onSeek={seek} variant="expanded" />
-            <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-muted-foreground font-medium">
+            <div className="mt-1.5 flex justify-between text-[11px] font-medium tabular-nums text-muted-foreground">
               <span>{formatDuration(progress)}</span>
               <span>{formatDuration(total)}</span>
             </div>
           </div>
 
           {/* Playback Controls */}
-          <div className="mt-4 flex items-center justify-between">
+          <div
+            className="mt-4 flex items-center justify-between"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               onClick={toggleShuffle}
@@ -354,7 +350,7 @@ export function ExpandedPlayer() {
               className={cn(
                 "press relative grid h-11 w-11 place-items-center rounded-full transition-colors",
                 shuffle
-                  ? "bg-primary/20 text-primary font-bold shadow-sm"
+                  ? "bg-primary/20 font-bold text-primary shadow-sm"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -367,15 +363,20 @@ export function ExpandedPlayer() {
               type="button"
               onClick={previous}
               aria-label="Previous track"
-              className="press grid h-12 w-12 place-items-center rounded-full text-foreground hover:text-primary transition-colors"
+              className="press grid h-12 w-12 place-items-center rounded-full text-foreground transition-colors hover:text-primary"
             >
               <SkipBack size={26} />
             </button>
             <button
               type="button"
-              onClick={toggle}
+              onClick={(e) => {
+                e.stopPropagation();
+                // Prevent ghost click right after minimizing
+                if (Date.now() - lastCloseAtRef.current < 350) return;
+                toggle();
+              }}
               aria-label={isPlaying ? "Pause" : "Play"}
-              className="press grid h-16 w-16 place-items-center rounded-full bg-primary text-primary-foreground glow shadow-lg"
+              className="press grid h-16 w-16 place-items-center rounded-full bg-primary text-primary-foreground shadow-lg glow"
             >
               {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-1" />}
             </button>
@@ -383,7 +384,7 @@ export function ExpandedPlayer() {
               type="button"
               onClick={next}
               aria-label="Next track"
-              className="press grid h-12 w-12 place-items-center rounded-full text-foreground hover:text-primary transition-colors"
+              className="press grid h-12 w-12 place-items-center rounded-full text-foreground transition-colors hover:text-primary"
             >
               <SkipForward size={26} />
             </button>
@@ -394,7 +395,7 @@ export function ExpandedPlayer() {
               className={cn(
                 "press grid h-11 w-11 place-items-center rounded-full transition-colors",
                 repeat !== "off"
-                  ? "bg-primary/20 text-primary font-bold shadow-sm"
+                  ? "bg-primary/20 font-bold text-primary shadow-sm"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -405,8 +406,12 @@ export function ExpandedPlayer() {
           {/* End Session */}
           <button
             type="button"
-            onClick={stopListening}
-            className="press mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-glass-border bg-glass/40 py-2.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              stopListening();
+            }}
+            className="press mt-6 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-glass-border bg-glass/40 py-2.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:text-foreground"
           >
             <Square size={13} /> End session
           </button>

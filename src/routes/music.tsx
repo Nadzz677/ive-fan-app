@@ -1,8 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Clock, Heart, ListMusic } from "lucide-react";
-import { getTrack } from "@/data/albums";
-import { useAlbums, useTracks } from "@/lib/catalog";
+import { useCatalog } from "@/lib/catalog";
 import { useFavorites } from "@/lib/favorites";
 import { clearRecentlyPlayed, useRecentlyPlayed } from "@/lib/recently-played";
 import { SongCard } from "@/components/SongCard";
@@ -47,15 +46,14 @@ const langFilters: { id: LangFilter; label: string }[] = [
 ];
 
 function MusicPage() {
-  const { data: albums } = useAlbums();
-  const { data: tracks } = useTracks();
+  const { albums, tracks, getTrack } = useCatalog();
   const [mode, setMode] = useState<Mode>("all");
   const [langFilter, setLangFilter] = useState<LangFilter>("all");
   const [albumFilter, setAlbumFilter] = useState<string>("all");
   const { favorites } = useFavorites();
   const recentIds = useRecentlyPlayed();
 
-  const recentTracks = useMemo(() => recentIds.map(getTrack).filter((t) => !!t), [recentIds]);
+  const recentTracks = useMemo(() => recentIds.map(getTrack).filter((t) => !!t), [recentIds, getTrack]);
 
   const visible = useMemo(() => {
     let list =
@@ -79,9 +77,9 @@ function MusicPage() {
     }
 
     return list;
-  }, [mode, langFilter, albumFilter, favorites.song, recentTracks, tracks]);
+  }, [mode, langFilter, albumFilter, favorites.song, recentTracks, tracks, getTrack]);
 
-  const queue = visible.map((t) => t.id);
+  const queue = useMemo(() => visible.map((t) => t.id), [visible]);
 
   return (
     <div>

@@ -90,6 +90,7 @@ function SettingsPage() {
   const {
     uid,
     isCloudEnabled,
+    isPreviewingFanApp,
     loading: authLoading,
     error: authError,
     replayOnboarding,
@@ -255,35 +256,37 @@ function SettingsPage() {
         </div>
       </section>
 
-      {/* Cloud Sync & Database */}
-      <section className="mt-9">
-        <SectionHeader eyebrow="FIREBASE" title="Cloud Sync" />
-        <div className="px-5">
-          <div className="editorial-rule border-y py-4">
-            <div className="flex items-center gap-3.5">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-glass-border bg-primary/10 text-primary">
-                {isCloudEnabled ? <Cloud size={16} /> : <CloudOff size={16} />}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
-                  {isCloudEnabled
-                    ? "Live Archive & Sync Active"
-                    : isFirebaseConfigured && authLoading
-                      ? "Connecting to Firebase..."
-                      : "Local-Only Mode"}
-                </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {isCloudEnabled && uid
-                    ? `Device ID: ${uid.slice(0, 10)}… · Favorites, theme & catalog synced`
-                    : authError
-                      ? authError
-                      : "Favorites, era theme, and history are saved on your device."}
-                </p>
+      {/* Cloud Sync & Database — Preserved exclusively for Desktop Admin Preview */}
+      {!isNative && isPreviewingFanApp && (
+        <section className="mt-9">
+          <SectionHeader eyebrow="FIREBASE" title="Cloud Sync" />
+          <div className="px-5">
+            <div className="editorial-rule border-y py-4">
+              <div className="flex items-center gap-3.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-glass-border bg-primary/10 text-primary">
+                  {isCloudEnabled ? <Cloud size={16} /> : <CloudOff size={16} />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">
+                    {isCloudEnabled
+                      ? "Live Archive & Sync Active (Admin Preview)"
+                      : isFirebaseConfigured && authLoading
+                        ? "Connecting to Firebase..."
+                        : "Local-Only Mode"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {isCloudEnabled && uid
+                      ? `Admin Session ID: ${uid.slice(0, 10)}… · Live catalog synced`
+                      : authError
+                        ? authError
+                        : "Favorites, era theme, and history are saved on your device."}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* About Footer */}
       <section className="mt-9 px-5">

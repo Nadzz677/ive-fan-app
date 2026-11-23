@@ -50,11 +50,26 @@ export function CurvedProgress({
   const handlePointerUp = (e: React.PointerEvent) => {
     if (!isScrubbing) return;
     e.stopPropagation();
-    setIsScrubbing(false);
-    if (scrubSeconds !== null) {
-      onSeek(scrubSeconds);
-      setScrubSeconds(null);
+    let finalSec = scrubSeconds;
+    if (containerRef.current && Number.isFinite(e.clientX)) {
+      const rect = containerRef.current.getBoundingClientRect();
+      if (rect.width > 0) {
+        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        finalSec = ratio * safeTotal;
+      }
     }
+    setIsScrubbing(false);
+    setScrubSeconds(null);
+    if (finalSec !== null) {
+      onSeek(finalSec);
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent) => {
+    if (!isScrubbing) return;
+    e.stopPropagation();
+    setIsScrubbing(false);
+    setScrubSeconds(null);
   };
 
   // High-definition organic continuous wave path across 0..1000
@@ -75,7 +90,7 @@ export function CurvedProgress({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       className={`group relative w-full select-none cursor-pointer touch-none flex items-center ${heightClass} ${className}`}
       role="slider"
       aria-label="Playback progress"

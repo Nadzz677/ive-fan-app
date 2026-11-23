@@ -8,12 +8,48 @@ import {
   useState,
 } from "react";
 import { tracks as allTracks, trackDuration } from "@/data/albums";
-import { getLiveTrack } from "./catalog";
+import { getLiveTrack, getLiveTrackArtwork, useCatalog } from "./catalog";
 import type { Track } from "@/types";
 import { pushRecentlyPlayed } from "./recently-played";
 import { useSettings } from "./settings";
 
 export type RepeatMode = "off" | "all" | "one";
+
+/**
+ * Normalizes any Direct Audio URL (Google Drive share links, Dropbox share links,
+ * GitHub blob links, Archive.org, Cloudinary, Firebase Storage, or direct .mp3/.m4a/.ogg/.wav URLs)
+ * into a direct streamable audio URL for instant HTML5 <audio> playback.
+ */
+export function resolveDirectAudioUrl(input?: string): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // 1. Google Drive share URL -> direct download stream
+  // e.g. https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+  const gdriveMatch =
+    trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ??
+    trimmed.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if (gdriveMatch?.[1]) {
+    return `https://docs.google.com/uc?export=download&id=${gdriveMatch[1]}`;
+  }
+
+  // 2. Dropbox share URL -> direct stream (raw=1)
+  if (trimmed.includes("dropbox.com/")) {
+    return trimmed
+      .replace("www.dropbox.com", "dl.dropboxusercontent.com")
+      .replace(/[?&]dl=[01]/, "");
+  }
+
+  // 3. GitHub blob URL -> raw.githubusercontent.com
+  if (trimmed.includes("github.com/") && trimmed.includes("/blob/")) {
+    return trimmed
+      .replace("github.com/", "raw.githubusercontent.com/")
+      .replace("/blob/", "/");
+  }
+
+  return trimmed;
+}
 
 /**
  * Extracts an 11-character YouTube Video ID from any YouTube URL format:
@@ -53,12 +89,20 @@ export function extractYouTubeId(input?: string): string | null {
 }
 
 interface YTPlayerInstance {
-  loadVideoById: (videoId: string, startSeconds?: number) => void;
-  cueVideoById: (videoId: string, startSeconds?: number) => void;
+  loadVideoById: (
+    videoIdOrOptions: string | { videoId: string; startSeconds?: number },
+    startSeconds?: number,
+  ) => void;
+  cueVideoById: (
+    videoIdOrOptions: string | { videoId: string; startSeconds?: number },
+    startSeconds?: number,
+  ) => void;
   playVideo: () => void;
   pauseVideo: () => void;
   stopVideo: () => void;
   seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  setVolume?: (volume: number) => void;
+  unMute?: () => void;
   getCurrentTime: () => number;
   getDuration: () => number;
   getPlayerState: () => number;
@@ -134,12 +178,17 @@ function ensureYouTubeIframeApi(): Promise<YTGlobal> {
   return ytApiPromise;
 }
 
+if (typeof window !== "undefined") {
+  void ensureYouTubeIframeApi().catch(() => {});
+}
+
 interface PlayerContextValue {
   currentTrack: Track | null;
   isPlaying: boolean;
   progress: number; // seconds
-  effectiveDuration: number; // real duration when streaming, or static trackDuration fallback
+  effectiveDuration: number;
   hasRealAudio: boolean;
+  audioSourceKind: "direct" | "youtube" | "simulated";
   youtubeId: string | null;
   queue: string[];
   shuffle: boolean;
@@ -152,24 +201,31 @@ interface PlayerContextValue {
   seek: (seconds: number) => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
-  /** Ends the session: stops playback and clears the active track/compact player. */
   stopListening: () => void;
   setExpanded: (open: boolean) => void;
 }
 
-const PlayerContext = createContext<PlayerContextValue | null>(null);
+interface PlayerProgressValue {
+  progress: number;
+  effectiveDuration: number;
+}
+
+/**
+ * Dedicated Context Architecture for 60fps Performance:
+ * - `PlayerControlContext`: Never re-renders on 200ms progress ticks! Used by `SongCard` (87 cards)
+ *   and `HomePage` so route transitions and scrolling stay 60fps.
+ * - `PlayerProgressContext`: Subscribed only by `MusicPlayer` and `ExpandedPlayer`.
+ */
+const PlayerControlContext = createContext<Omit<PlayerContextValue, "progress"> | null>(null);
+const PlayerProgressContext = createContext<PlayerProgressValue | null>(null);
 
 const LAST_TRACK_KEY = "ive-dive-archive:last-track";
 const SHUFFLE_KEY = "ive-dive-archive:shuffle";
 
-/**
- * Hybrid Audio Engine:
- * 1. If the active track has a valid `youtubeUrl`, streams real audio via the YouTube IFrame JS API.
- * 2. Else if the active track has an `audioUrl`, streams via HTML5 <audio>.
- * 3. Otherwise (or if offline / error), falls back smoothly to the simulated timer engine.
- */
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const { settings } = useSettings();
+  const { tracks: catalogTracks, config } = useCatalog();
+
   const [currentId, setCurrentId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -184,6 +240,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [progress, setProgress] = useState(0);
   const [realDuration, setRealDuration] = useState<number | null>(null);
   const [ytFailed, setYtFailed] = useState(false);
+  const [directAudioFailed, setDirectAudioFailed] = useState(false);
   const [queue, setQueue] = useState<string[]>(allTracks.map((t) => t.id));
   const [shuffle, setShuffle] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -195,7 +252,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   });
   const [repeat, setRepeat] = useState<RepeatMode>("off");
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpandedState] = useState(false);
 
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const historyRef = useRef<string[]>([]);
@@ -204,27 +261,100 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const ytHostRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayerInstance | null>(null);
   const ytReadyRef = useRef(false);
+  const ytInitializingRef = useRef(false);
   const loadedYtVideoIdRef = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Refs for latest state inside YouTube callbacks
+  // Guard timestamp whenever `expanded` toggles so opening/closing the full player NEVER stops audio
+  const modalTransitionUntilRef = useRef<number>(0);
+
+  // Seek Lock & Pending Start Timestamp Refs
+  const seekTargetSecRef = useRef<number | null>(null);
+  const seekLockUntilRef = useRef<number>(0);
+  const pendingStartSecRef = useRef<number>(0);
+  const progressRef = useRef<number>(0);
+  progressRef.current = progress;
+
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
 
-  const currentTrack = currentId ? (getLiveTrack(currentId) ?? null) : null;
+  const currentTrack = useMemo(() => {
+    if (!currentId) return null;
+    return catalogTracks.find((t) => t.id === currentId) ?? getLiveTrack(currentId) ?? null;
+  }, [currentId, catalogTracks]);
+
+  const directAudioUrl = useMemo(
+    () => resolveDirectAudioUrl(currentTrack?.audioUrl),
+    [currentTrack?.audioUrl],
+  );
   const youtubeId = useMemo(
     () => extractYouTubeId(currentTrack?.youtubeUrl),
     [currentTrack?.youtubeUrl],
   );
-  const directAudioUrl = currentTrack?.audioUrl?.trim() || null;
+  const youtubeIdRef = useRef<string | null>(youtubeId);
+  youtubeIdRef.current = youtubeId;
 
-  const useYouTubeEngine = Boolean(youtubeId && !ytFailed);
-  const useHtmlAudioEngine = Boolean(!useYouTubeEngine && directAudioUrl);
-  const hasRealAudio = useYouTubeEngine || useHtmlAudioEngine;
+  // Priority 1: Direct Audio CDN URL (0ms native stream, zero YouTube iframe overhead!)
+  // Priority 2: YouTube IFrame Audio Engine
+  // Priority 3: Simulated Timer Engine
+  const useHtmlAudioEngine = Boolean(directAudioUrl && !directAudioFailed);
+  const useYouTubeEngine = Boolean(!useHtmlAudioEngine && youtubeId && !ytFailed);
+  const hasRealAudio = useHtmlAudioEngine || useYouTubeEngine;
+  const audioSourceKind: "direct" | "youtube" | "simulated" = useHtmlAudioEngine
+    ? "direct"
+    : useYouTubeEngine
+      ? "youtube"
+      : "simulated";
+
+  const prewarmVideoId = useMemo(() => {
+    if (youtubeId) return youtubeId;
+    const featured = catalogTracks.find((t) => t.id === config.featuredTrackId);
+    const featuredYt = extractYouTubeId(featured?.youtubeUrl);
+    if (featuredYt) return featuredYt;
+    for (const t of catalogTracks) {
+      const id = extractYouTubeId(t.youtubeUrl);
+      if (id) return id;
+    }
+    return null;
+  }, [youtubeId, catalogTracks, config.featuredTrackId]);
 
   const fallbackDuration = currentTrack ? trackDuration(currentTrack) : 180;
   const effectiveDuration =
     hasRealAudio && realDuration && realDuration > 0 ? Math.round(realDuration) : fallbackDuration;
+
+  const clearSeekLock = useCallback(() => {
+    seekTargetSecRef.current = null;
+    seekLockUntilRef.current = 0;
+    pendingStartSecRef.current = 0;
+  }, []);
+
+  // Safe setExpanded that shields the audio engine during the 450ms open/close animation
+  const setExpanded = useCallback(
+    (open: boolean) => {
+      modalTransitionUntilRef.current = Date.now() + 650;
+      setExpandedState(open);
+
+      // Proactively ensure playback continues across the modal transition
+      if (isPlayingRef.current) {
+        window.setTimeout(() => {
+          if (!isPlayingRef.current) return;
+          if (useHtmlAudioEngine && audioRef.current && audioRef.current.paused) {
+            void audioRef.current.play().catch(() => {});
+          } else if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
+            try {
+              const st = ytPlayerRef.current.getPlayerState?.();
+              if (st !== 1 && st !== 3) {
+                ytPlayerRef.current.playVideo();
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        }, 40);
+      }
+    },
+    [useHtmlAudioEngine, useYouTubeEngine],
+  );
 
   const toggleShuffle = useCallback(() => {
     setShuffle((prev) => {
@@ -250,17 +380,61 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     [settings.trackRecentlyPlayed],
   );
 
+  const commandYouTubeImmediate = useCallback((nextVideoId: string | null, startSec = 0) => {
+    if (!nextVideoId || !ytPlayerRef.current || !ytReadyRef.current) return;
+    try {
+      ytPlayerRef.current.unMute?.();
+      ytPlayerRef.current.setVolume?.(100);
+      if (loadedYtVideoIdRef.current !== nextVideoId) {
+        loadedYtVideoIdRef.current = nextVideoId;
+        ytPlayerRef.current.loadVideoById({
+          videoId: nextVideoId,
+          startSeconds: startSec,
+        });
+      } else {
+        if (startSec > 0) {
+          ytPlayerRef.current.seekTo(startSec, true);
+        }
+        ytPlayerRef.current.playVideo();
+      }
+    } catch {
+      /* handled by effect fallback */
+    }
+  }, []);
+
   const playTrack = useCallback(
     (trackId: string, nextQueue?: string[]) => {
       if (nextQueue?.length) setQueue(nextQueue);
+      const targetTrack =
+        catalogTracks.find((t) => t.id === trackId) ?? getLiveTrack(trackId) ?? null;
+      const targetDirectAudio = resolveDirectAudioUrl(targetTrack?.audioUrl);
+      const targetYtId = extractYouTubeId(targetTrack?.youtubeUrl);
+
+      clearSeekLock();
       setCurrentId(trackId);
       setProgress(0);
       setRealDuration(null);
       setYtFailed(false);
+      setDirectAudioFailed(false);
       setIsPlaying(true);
       remember(trackId);
+
+      if (targetDirectAudio && audioRef.current) {
+        try {
+          if (ytPlayerRef.current && ytReadyRef.current) {
+            ytPlayerRef.current.pauseVideo();
+          }
+          audioRef.current.src = targetDirectAudio;
+          audioRef.current.currentTime = 0;
+          void audioRef.current.play().catch(() => {});
+        } catch {
+          /* handled by effect */
+        }
+      } else if (targetYtId) {
+        commandYouTubeImmediate(targetYtId, 0);
+      }
     },
-    [remember],
+    [catalogTracks, clearSeekLock, commandYouTubeImmediate, remember],
   );
 
   const step = useCallback(
@@ -290,75 +464,153 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         nextId = queue[nextIdx] ?? currentId;
       }
 
+      const targetTrack =
+        catalogTracks.find((t) => t.id === nextId) ?? getLiveTrack(nextId) ?? null;
+      const targetDirectAudio = resolveDirectAudioUrl(targetTrack?.audioUrl);
+      const targetYtId = extractYouTubeId(targetTrack?.youtubeUrl);
+
+      clearSeekLock();
       setCurrentId(nextId);
       setProgress(0);
       setRealDuration(null);
       setYtFailed(false);
+      setDirectAudioFailed(false);
       setIsPlaying(true);
       remember(nextId);
+
+      if (targetDirectAudio && audioRef.current) {
+        try {
+          if (ytPlayerRef.current && ytReadyRef.current) {
+            ytPlayerRef.current.pauseVideo();
+          }
+          audioRef.current.src = targetDirectAudio;
+          audioRef.current.currentTime = 0;
+          void audioRef.current.play().catch(() => {});
+        } catch {
+          /* handled by effect */
+        }
+      } else if (targetYtId) {
+        commandYouTubeImmediate(targetYtId, 0);
+      }
     },
-    [currentId, queue, shuffle, remember],
+    [catalogTracks, clearSeekLock, commandYouTubeImmediate, currentId, queue, shuffle, remember],
   );
 
   const next = useCallback(() => step(1), [step]);
   const previous = useCallback(() => step(-1), [step]);
 
   const handleTrackFinish = useCallback(() => {
+    clearSeekLock();
     if (repeat === "one") {
       setProgress(0);
-      if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
-        ytPlayerRef.current.seekTo(0, true);
-        ytPlayerRef.current.playVideo();
-      } else if (useHtmlAudioEngine && audioRef.current) {
+      if (useHtmlAudioEngine && audioRef.current) {
         audioRef.current.currentTime = 0;
         void audioRef.current.play().catch(() => {});
+      } else if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
+        ytPlayerRef.current.seekTo(0, true);
+        ytPlayerRef.current.playVideo();
       }
     } else if (settings.autoplay || repeat === "all") {
       next();
     } else {
       setIsPlaying(false);
     }
-  }, [repeat, settings.autoplay, next, useYouTubeEngine, useHtmlAudioEngine]);
+  }, [clearSeekLock, repeat, settings.autoplay, next, useYouTubeEngine, useHtmlAudioEngine]);
 
   const handleTrackFinishRef = useRef(handleTrackFinish);
   handleTrackFinishRef.current = handleTrackFinish;
 
   const toggle = useCallback(() => {
-    setIsPlaying((p) => (currentId ? !p : p));
-  }, [currentId]);
+    if (!currentId) return;
+    setIsPlaying((prev) => {
+      const nextPlaying = !prev;
+      if (useHtmlAudioEngine && audioRef.current) {
+        if (nextPlaying) {
+          void audioRef.current.play().catch(() => {});
+        } else {
+          audioRef.current.pause();
+        }
+      } else if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
+        try {
+          if (nextPlaying) {
+            if (youtubeId && loadedYtVideoIdRef.current !== youtubeId) {
+              loadedYtVideoIdRef.current = youtubeId;
+              ytPlayerRef.current.loadVideoById({
+                videoId: youtubeId,
+                startSeconds: pendingStartSecRef.current || progressRef.current || 0,
+              });
+            } else {
+              ytPlayerRef.current.playVideo();
+            }
+          } else {
+            ytPlayerRef.current.pauseVideo();
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      return nextPlaying;
+    });
+  }, [currentId, useHtmlAudioEngine, useYouTubeEngine, youtubeId]);
 
   const seek = useCallback(
     (seconds: number) => {
       const clamped = Math.max(0, Math.min(effectiveDuration, seconds));
       setProgress(clamped);
 
-      if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
+      seekTargetSecRef.current = clamped;
+      seekLockUntilRef.current = Date.now() + 2200;
+      pendingStartSecRef.current = clamped;
+
+      if (useHtmlAudioEngine && audioRef.current) {
         try {
-          ytPlayerRef.current.seekTo(clamped, true);
+          audioRef.current.currentTime = clamped;
+          if (isPlayingRef.current && audioRef.current.paused) {
+            void audioRef.current.play().catch(() => {});
+          }
         } catch {
           /* ignore */
         }
-      } else if (useHtmlAudioEngine && audioRef.current) {
+      } else if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
         try {
-          audioRef.current.currentTime = clamped;
+          if (youtubeId && loadedYtVideoIdRef.current !== youtubeId) {
+            loadedYtVideoIdRef.current = youtubeId;
+            if (isPlayingRef.current) {
+              ytPlayerRef.current.loadVideoById({
+                videoId: youtubeId,
+                startSeconds: clamped,
+              });
+            } else {
+              ytPlayerRef.current.cueVideoById({
+                videoId: youtubeId,
+                startSeconds: clamped,
+              });
+            }
+          } else {
+            ytPlayerRef.current.seekTo(clamped, true);
+            if (isPlayingRef.current) {
+              ytPlayerRef.current.playVideo();
+            }
+          }
         } catch {
           /* ignore */
         }
       }
     },
-    [effectiveDuration, useYouTubeEngine, useHtmlAudioEngine],
+    [effectiveDuration, useYouTubeEngine, useHtmlAudioEngine, youtubeId],
   );
 
   const stopListening = useCallback(() => {
+    clearSeekLock();
     setIsPlaying(false);
     setCurrentId(null);
     setProgress(0);
     setRealDuration(null);
-    setExpanded(false);
+    setExpandedState(false);
     historyRef.current = [];
     if (ytPlayerRef.current && ytReadyRef.current) {
       try {
-        ytPlayerRef.current.stopVideo();
+        ytPlayerRef.current.pauseVideo();
       } catch {
         /* ignore */
       }
@@ -371,69 +623,43 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* storage unavailable */
     }
-  }, []);
-
-  // Reset per-track overrides when currentId changes
-  useEffect(() => {
-    setRealDuration(null);
-    setYtFailed(false);
-  }, [currentId, youtubeId]);
+  }, [clearSeekLock]);
 
   // ---------------------------------------------------------------------------
-  // ENGINE 1: YouTube IFrame JS API Controller
+  // PRE-WARM YOUTUBE PLAYER INSTANCE ON MOUNT
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (!useYouTubeEngine || !youtubeId) {
-      if (ytPlayerRef.current && ytReadyRef.current) {
-        try {
-          ytPlayerRef.current.pauseVideo();
-        } catch {
-          /* ignore */
-        }
-      }
-      return;
-    }
+    if (typeof window === "undefined") return;
+    if (ytPlayerRef.current || ytInitializingRef.current) return;
+    const initialVid = youtubeId || prewarmVideoId;
+    if (!initialVid) return;
 
     let cancelled = false;
+    ytInitializingRef.current = true;
 
     void ensureYouTubeIframeApi()
       .then((YT) => {
-        if (cancelled) return;
-
-        // If player already exists and is ready, load or cue the video
-        if (ytPlayerRef.current && ytReadyRef.current) {
-          if (loadedYtVideoIdRef.current !== youtubeId) {
-            loadedYtVideoIdRef.current = youtubeId;
-            if (isPlayingRef.current) {
-              ytPlayerRef.current.loadVideoById(youtubeId, 0);
-            } else {
-              ytPlayerRef.current.cueVideoById(youtubeId, 0);
-            }
-          } else {
-            if (isPlayingRef.current) {
-              ytPlayerRef.current.playVideo();
-            } else {
-              ytPlayerRef.current.pauseVideo();
-            }
-          }
+        if (cancelled || ytPlayerRef.current || !ytHostRef.current) {
+          ytInitializingRef.current = false;
           return;
         }
 
-        // Otherwise initialize the YouTube player instance inside ytHostRef
-        if (!ytHostRef.current) return;
         ytHostRef.current.innerHTML = "";
         const mountTarget = document.createElement("div");
         ytHostRef.current.appendChild(mountTarget);
 
-        loadedYtVideoIdRef.current = youtubeId;
+        const targetVid = youtubeIdRef.current || initialVid;
+        loadedYtVideoIdRef.current = targetVid;
+
         ytPlayerRef.current = new YT.Player(mountTarget, {
-          height: "1",
-          width: "1",
-          videoId: youtubeId,
+          height: "200",
+          width: "200",
+          videoId: targetVid,
           playerVars: {
             autoplay: isPlayingRef.current ? 1 : 0,
             controls: 0,
             disablekb: 1,
+            enablejsapi: 1,
             fs: 0,
             iv_load_policy: 3,
             modestbranding: 1,
@@ -443,79 +669,241 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
           },
           events: {
             onReady: (event) => {
-              if (cancelled) return;
+              ytInitializingRef.current = false;
               ytReadyRef.current = true;
+              event.target.unMute?.();
+              event.target.setVolume?.(100);
+
+              const activeVid = youtubeIdRef.current;
+              const startSec = pendingStartSecRef.current || 0;
+
+              if (activeVid && loadedYtVideoIdRef.current !== activeVid) {
+                loadedYtVideoIdRef.current = activeVid;
+                if (isPlayingRef.current) {
+                  event.target.loadVideoById({ videoId: activeVid, startSeconds: startSec });
+                } else {
+                  event.target.cueVideoById({ videoId: activeVid, startSeconds: startSec });
+                }
+                return;
+              }
+
               const dur = event.target.getDuration?.() ?? 0;
               if (dur > 0) setRealDuration(dur);
-              if (isPlayingRef.current) {
+
+              if (isPlayingRef.current && activeVid) {
+                if (startSec > 0) {
+                  event.target.seekTo(startSec, true);
+                }
                 event.target.playVideo();
               }
             },
             onStateChange: (event) => {
-              if (cancelled) return;
+              const state = event.data;
               const dur = event.target.getDuration?.() ?? 0;
               if (dur > 0) setRealDuration(dur);
-              // 0 === YT.PlayerState.ENDED
-              if (event.data === 0) {
+
+              // 1 === PLAYING
+              if (state === 1) {
+                if (pendingStartSecRef.current > 0) {
+                  const targetSec = pendingStartSecRef.current;
+                  pendingStartSecRef.current = 0;
+                  const curr = event.target.getCurrentTime?.() ?? 0;
+                  if (Math.abs(curr - targetSec) > 1.8) {
+                    seekTargetSecRef.current = targetSec;
+                    seekLockUntilRef.current = Date.now() + 1800;
+                    event.target.seekTo(targetSec, true);
+                  }
+                }
+              }
+
+              // 2 === PAUSED: If the user intends to be playing (`isPlayingRef.current === true`),
+              // immediately resume! This prevents any WebView modal transition pause.
+              if (state === 2) {
+                if (isPlayingRef.current && youtubeIdRef.current) {
+                  window.setTimeout(() => {
+                    if (isPlayingRef.current && ytPlayerRef.current && ytReadyRef.current) {
+                      try {
+                        ytPlayerRef.current.playVideo();
+                      } catch {
+                        /* ignore */
+                      }
+                    }
+                  }, 40);
+                }
+              }
+
+              // 5 === CUED
+              if (state === 5 && isPlayingRef.current && youtubeIdRef.current) {
+                const startSec = pendingStartSecRef.current || 0;
+                if (startSec > 0) {
+                  event.target.seekTo(startSec, true);
+                }
+                event.target.playVideo();
+              }
+
+              // 0 === ENDED
+              if (state === 0) {
                 handleTrackFinishRef.current();
               }
             },
             onError: () => {
-              if (cancelled) return;
-              // Gracefully fallback to simulated playback if video is restricted or offline
+              ytInitializingRef.current = false;
               setYtFailed(true);
             },
           },
         });
       })
       .catch(() => {
-        if (!cancelled) setYtFailed(true);
+        ytInitializingRef.current = false;
       });
 
     return () => {
       cancelled = true;
     };
-  }, [useYouTubeEngine, youtubeId]);
+  }, [youtubeId, prewarmVideoId]);
 
-  // Synchronize Play / Pause state with YouTube player
+  // Sync active YouTube video when track or play state changes
   useEffect(() => {
-    if (!useYouTubeEngine || !ytPlayerRef.current || !ytReadyRef.current) return;
-    try {
-      if (isPlaying) {
-        ytPlayerRef.current.playVideo();
-      } else {
+    if (!ytPlayerRef.current || !ytReadyRef.current) return;
+
+    if (!useYouTubeEngine || !youtubeId) {
+      try {
         ytPlayerRef.current.pauseVideo();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    try {
+      const startSec = pendingStartSecRef.current || 0;
+      if (loadedYtVideoIdRef.current !== youtubeId) {
+        loadedYtVideoIdRef.current = youtubeId;
+        if (isPlaying) {
+          ytPlayerRef.current.loadVideoById({
+            videoId: youtubeId,
+            startSeconds: startSec,
+          });
+        } else {
+          ytPlayerRef.current.cueVideoById({
+            videoId: youtubeId,
+            startSeconds: startSec,
+          });
+        }
+      } else {
+        const playerState = ytPlayerRef.current.getPlayerState?.();
+        if (isPlaying && playerState !== 1 && playerState !== 3) {
+          ytPlayerRef.current.playVideo();
+        } else if (!isPlaying && playerState === 1) {
+          ytPlayerRef.current.pauseVideo();
+        }
       }
     } catch {
       /* ignore */
     }
-  }, [isPlaying, useYouTubeEngine]);
+  }, [useYouTubeEngine, youtubeId, isPlaying]);
 
-  // Poll YouTube playhead progress while playing
+  // Poll YouTube playhead progress + Watchdog auto-resume while playing
   useEffect(() => {
     if (!useYouTubeEngine || !isPlaying) return;
     const poll = setInterval(() => {
       const player = ytPlayerRef.current;
       if (!player || !ytReadyRef.current) return;
       try {
-        const current = player.getCurrentTime?.();
+        const state = player.getPlayerState?.();
         const dur = player.getDuration?.();
         if (typeof dur === "number" && dur > 0) {
           setRealDuration(dur);
         }
-        if (typeof current === "number" && !Number.isNaN(current)) {
+
+        // Watchdog: if the iframe silently paused during a modal transition while isPlaying is true,
+        // kick it back into playing immediately!
+        if (isPlayingRef.current && (state === 2 || state === 5)) {
+          player.playVideo();
+        }
+
+        const current = player.getCurrentTime?.();
+        if (typeof current !== "number" || Number.isNaN(current)) return;
+
+        // SEEK LOCK: While a seek is in flight, ignore stale getCurrentTime() readings
+        if (seekTargetSecRef.current !== null) {
+          const dist = Math.abs(current - seekTargetSecRef.current);
+          if (dist <= 1.4 && state === 1) {
+            seekTargetSecRef.current = null;
+            seekLockUntilRef.current = 0;
+            pendingStartSecRef.current = 0;
+            setProgress(current);
+          } else if (Date.now() > seekLockUntilRef.current && state === 1) {
+            seekTargetSecRef.current = null;
+            seekLockUntilRef.current = 0;
+            pendingStartSecRef.current = 0;
+            setProgress(current);
+          }
+          return;
+        }
+
+        if (state === 1 || current > 0) {
           setProgress(current);
         }
       } catch {
         /* ignore */
       }
-    }, 250);
+    }, 220);
 
     return () => clearInterval(poll);
   }, [useYouTubeEngine, isPlaying]);
 
+  // Keep playback alive when app is minimized to background or screen locks
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisibilityChange = () => {
+      if (document.hidden && isPlayingRef.current) {
+        if (useHtmlAudioEngine && audioRef.current && audioRef.current.paused) {
+          void audioRef.current.play().catch(() => {});
+        } else if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
+          window.setTimeout(() => {
+            if (isPlayingRef.current) {
+              try {
+                ytPlayerRef.current?.playVideo();
+              } catch {
+                /* ignore */
+              }
+            }
+          }, 80);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [useYouTubeEngine, useHtmlAudioEngine]);
+
+  // Register MediaSession metadata & lockscreen/notification controls
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator) || !currentTrack) return;
+    try {
+      const artworkUrl = getLiveTrackArtwork(currentTrack);
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.title,
+        artist: currentTrack.artist ?? "IVE",
+        album: currentTrack.albumId,
+        ...(artworkUrl ? { artwork: [{ src: artworkUrl, sizes: "512x512", type: "image/png" }] } : {}),
+      });
+      navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+      navigator.mediaSession.setActionHandler("play", () => setIsPlaying(true));
+      navigator.mediaSession.setActionHandler("pause", () => {
+        // Ignore spurious OS/WebView mediaSession pause events during ExpandedPlayer open/close!
+        if (Date.now() < modalTransitionUntilRef.current) return;
+        setIsPlaying(false);
+      });
+      navigator.mediaSession.setActionHandler("previoustrack", () => previous());
+      navigator.mediaSession.setActionHandler("nexttrack", () => next());
+    } catch {
+      /* ignore unsupported mediaSession actions */
+    }
+  }, [currentTrack, isPlaying, next, previous]);
+
   // ---------------------------------------------------------------------------
-  // ENGINE 2: Direct HTML5 <audio> Controller
+  // ENGINE 1: Direct HTML5 <audio> Controller (0ms Latency, Native Background Audio)
   // ---------------------------------------------------------------------------
   useEffect(() => {
     const audio = audioRef.current;
@@ -539,7 +927,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [useHtmlAudioEngine, directAudioUrl, isPlaying]);
 
   // ---------------------------------------------------------------------------
-  // ENGINE 3: Simulated Timer Fallback (when no YouTube / Audio link is set)
+  // ENGINE 3: Simulated Timer Fallback
   // ---------------------------------------------------------------------------
   useEffect(() => {
     if (timer.current) clearInterval(timer.current);
@@ -561,7 +949,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     };
   }, [hasRealAudio, isPlaying, currentTrack]);
 
-  // Handle simulated track completion
   useEffect(() => {
     if (hasRealAudio || !isPlaying || !currentTrack) return;
     const duration = trackDuration(currentTrack);
@@ -570,13 +957,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [hasRealAudio, progress, isPlaying, currentTrack, handleTrackFinish]);
 
-  const value = useMemo<PlayerContextValue>(
+  const controlValue = useMemo<Omit<PlayerContextValue, "progress">>(
     () => ({
       currentTrack,
       isPlaying,
-      progress,
       effectiveDuration,
       hasRealAudio,
+      audioSourceKind,
       youtubeId,
       queue,
       shuffle,
@@ -595,9 +982,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     [
       currentTrack,
       isPlaying,
-      progress,
       effectiveDuration,
       hasRealAudio,
+      audioSourceKind,
       youtubeId,
       queue,
       shuffle,
@@ -610,43 +997,86 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       seek,
       toggleShuffle,
       stopListening,
+      setExpanded,
     ],
   );
 
+  const progressValue = useMemo<PlayerProgressValue>(
+    () => ({
+      progress,
+      effectiveDuration,
+    }),
+    [progress, effectiveDuration],
+  );
+
   return (
-    <PlayerContext.Provider value={value}>
-      {children}
-      {/* Hidden host container for YouTube IFrame Audio Engine & HTML5 Audio fallback */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed -bottom-10 -left-10 h-px w-px overflow-hidden opacity-0"
-      >
-        <div ref={ytHostRef} />
-        <audio
-          ref={audioRef}
-          preload="metadata"
-          onLoadedMetadata={(e) => {
-            const dur = e.currentTarget.duration;
-            if (dur && Number.isFinite(dur)) setRealDuration(dur);
-          }}
-          onTimeUpdate={(e) => {
-            if (useHtmlAudioEngine) {
-              setProgress(e.currentTarget.currentTime);
-            }
-          }}
-          onEnded={() => {
-            if (useHtmlAudioEngine) {
-              handleTrackFinish();
-            }
-          }}
-        />
-      </div>
-    </PlayerContext.Provider>
+    <PlayerControlContext.Provider value={controlValue}>
+      <PlayerProgressContext.Provider value={progressValue}>
+        {children}
+        {/* Persistent offscreen media host */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed -left-[9999px] top-0 h-[200px] w-[200px] overflow-hidden opacity-[0.01]"
+        >
+          <div ref={ytHostRef} />
+          <audio
+            ref={audioRef}
+            preload="auto"
+            crossOrigin="anonymous"
+            onLoadedMetadata={(e) => {
+              const dur = e.currentTarget.duration;
+              if (dur && Number.isFinite(dur)) setRealDuration(dur);
+            }}
+            onTimeUpdate={(e) => {
+              if (useHtmlAudioEngine) {
+                if (seekTargetSecRef.current !== null && Date.now() < seekLockUntilRef.current) {
+                  if (Math.abs(e.currentTarget.currentTime - seekTargetSecRef.current) <= 1.2) {
+                    seekTargetSecRef.current = null;
+                    seekLockUntilRef.current = 0;
+                  } else {
+                    return;
+                  }
+                }
+                setProgress(e.currentTarget.currentTime);
+              }
+            }}
+            onEnded={() => {
+              if (useHtmlAudioEngine) {
+                handleTrackFinish();
+              }
+            }}
+            onError={() => {
+              if (useHtmlAudioEngine) {
+                setDirectAudioFailed(true);
+              }
+            }}
+          />
+        </div>
+      </PlayerProgressContext.Provider>
+    </PlayerControlContext.Provider>
   );
 }
 
-export function usePlayer() {
-  const ctx = useContext(PlayerContext);
-  if (!ctx) throw new Error("usePlayer must be used inside PlayerProvider");
+/**
+ * Fast 60fps control hook: does NOT re-render when `progress` ticks every 200ms!
+ * Use this in `SongCard`, `HomePage`, etc.
+ */
+export function usePlayerControls() {
+  const ctx = useContext(PlayerControlContext);
+  if (!ctx) throw new Error("usePlayerControls must be used inside PlayerProvider");
   return ctx;
+}
+
+/**
+ * Full player hook (includes live `progress` ticks for `MusicPlayer` and `ExpandedPlayer`).
+ */
+export function usePlayer(): PlayerContextValue {
+  const ctrl = useContext(PlayerControlContext);
+  const prog = useContext(PlayerProgressContext);
+  if (!ctrl || !prog) throw new Error("usePlayer must be used inside PlayerProvider");
+  return {
+    ...ctrl,
+    progress: prog.progress,
+    effectiveDuration: prog.effectiveDuration,
+  };
 }
