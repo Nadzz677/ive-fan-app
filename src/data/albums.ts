@@ -344,6 +344,35 @@ export const tracks: Track[] = [
     language: "Korean",
     version: "Original",
     releaseType: "Mini Album",
+    lyricsAvailable: true,
+    lyricsKorean: `시선이 닿는 순간 freeze
+가벼운 미소 뒤에 숨긴 thrill
+누구도 예상 못 한 attitude
+Watch out, looks can kill
+
+조명이 켜진 런웨이 위로
+거침없이 걸어가 내 방식대로
+흔들림 없는 눈빛 속에 비친
+새로운 시대의 crown
+
+단 한 번의 눈맞춤으로
+모든 공기를 바꿔 놓아
+Looks can kill, yeah we shine so bright
+밤하늘을 가르는 spotlight`,
+    lyricsRomanized: `Siseoni danneun sungan freeze
+Gabyeoun miso dwie sumgin thrill
+Nugudo yesang mot han attitude
+Watch out, looks can kill
+
+Jomyeongi kyeojin reonwei wiro
+Geochimeopsi georeoga nae bangsikdaero
+Heundeullim eomneun nunbit soge bichin
+Saeroun sidaeui crown
+
+Dan han beonui nunmatchumeuro
+Modeun gonggireul bakkwo noa
+Looks can kill, yeah we shine so bright
+Bamhaneureul gareuneun spotlight`,
   },
   {
     id: "lck-2",
@@ -356,6 +385,25 @@ export const tracks: Track[] = [
     language: "Korean",
     version: "Original",
     releaseType: "Mini Album",
+    lyricsAvailable: true,
+    lyricsKorean: `Mirror, mirror on the wall
+거울 속에 비친 나를 봐
+어제보다 더 선명해진 빛
+숨기지 않아 나의 전부를
+
+반짝이는 유리 조각 위로
+겹쳐지는 수많은 시선들
+내가 정의하는 나의 아름다움
+Mirror, mirror, tell me what you see`,
+    lyricsRomanized: `Mirror, mirror on the wall
+Geoul soge bichin nareul bwa
+Eojeboda deo seonmyeonghaejin bit
+Sumgiji ana naui jeonbureul
+
+Banjjagineun yuri jogak wiro
+Gyeopchyeojineun sumanheun siseondeul
+Naega jeonguihaneun naui areumdaum
+Mirror, mirror, tell me what you see`,
   },
   {
     id: "lck-3",
@@ -368,6 +416,25 @@ export const tracks: Track[] = [
     language: "Korean",
     version: "Original",
     releaseType: "Mini Album",
+    lyricsAvailable: true,
+    lyricsKorean: `차갑게 빛나는 실루엣
+오래된 껍질을 벗어던져
+더 완벽해진 리듬 위로 glide
+Shining like snakeskin in the dark
+
+멈추지 않는 베이스 라인
+나를 가두던 틀을 깨고 나와
+Every step I take, 새롭게 태어나
+눈부신 광채로 무대를 채워`,
+    lyricsRomanized: `Chagapge binnaneun silluet
+Oraedoen kkeopjireul beoseodeonjyeo
+Deo wanbyeokhaejin rideum wiro glide
+Shining like snakeskin in the dark
+
+Meomchuji anneun beiseu rain
+Nareul gadudeon teureul kkaego nawa
+Every step I take, saeropge taeeona
+Nunbusin gwangchaero mudaereul chaewo`,
   },
   {
     id: "lck-4",
@@ -380,6 +447,25 @@ export const tracks: Track[] = [
     language: "Korean",
     version: "Original",
     releaseType: "Mini Album",
+    lyricsAvailable: true,
+    lyricsKorean: `작은 조각만으론 부족해
+내가 원하는 건 전부니까
+어설픈 마음 따윈 남겨두지 마
+No crumbs left on the table
+
+당당하게 내딛는 발걸음
+망설임 없이 손을 뻗어
+우리만의 무대 위에서
+남김없이 빛을 내어봐`,
+    lyricsRomanized: `Jageun jogakmaneuron bujokhae
+Naega wonhaneun geon jeonbunikka
+Eoseolpeun maeum ttawin namgyeoduji ma
+No crumbs left on the table
+
+Dangdanghage naedinneun balgeoreum
+Mangseorim eopsi soneul ppeodeo
+Urimanui mudae wieseo
+Namgimeopsi bicheul naeeobwa`,
   },
   {
     id: "lck-5",
@@ -392,6 +478,25 @@ export const tracks: Track[] = [
     language: "Korean",
     version: "Original",
     releaseType: "Mini Album",
+    lyricsAvailable: true,
+    lyricsKorean: `Girls, girls, girls, 불을 밝혀봐
+도시의 밤을 깨우는 melody
+서로의 눈빛만 봐도 알잖아
+우린 언제나 가장 빛나니까
+
+높이 올라가는 볼륨 속에
+자유롭게 춤추는 순간
+누가 뭐래도 상관없어
+This night belongs to us`,
+    lyricsRomanized: `Girls, girls, girls, bureul balkhyeobwa
+Dosiui bameul kkaeuneun melody
+Seoroui nunbitman bwado aljana
+Urin eonjena gajang binnanikka
+
+Nopi ollaganeun bollyum soge
+Jayuropge chumchuneun sungan
+Nuga mworaedo sanggwaneopseo
+This night belongs to us`,
   },
   {
     id: "lck-6",
@@ -404,6 +509,25 @@ export const tracks: Track[] = [
     language: "Korean",
     version: "Original",
     releaseType: "Mini Album",
+    lyricsAvailable: true,
+    lyricsKorean: `은은하게 퍼져가는 파동
+슬로우 모션처럼 번지는 빛
+네온사인 아래 흔들리는 공기
+We're moving in glow motion
+
+끝없이 이어지는 별빛의 궤도
+숨결마다 반짝이는 순간들
+눈을 감아도 선명하게 보여
+Feel the rhythm in glow motion`,
+    lyricsRomanized: `Euneunhage peojyeoganeun padong
+Seullou mosyeoncheoreom beonjineun bit
+Neonsain arae heundeullineun gonggi
+We're moving in glow motion
+
+Kkeuteopsi ieojineun byeolbichui gwedo
+Sumgyeol마다 banjjagineun sungandeul
+Nuneul gamado seonmyeonghage boyeo
+Feel the rhythm in glow motion`,
   },
 
   // --- 02. LUCID DREAM (Japan 4th EP) ---
@@ -1797,14 +1921,44 @@ You make me feel like eleven`,
     version: "Original",
     releaseType: "Single Album",
     lyricsAvailable: true,
-    lyricsKorean: `Take it, take it, don't break it
-너의 손끝에 닿은 feeling
-망설이지 말고 내게 다가와
-Watch me now, take it right now`,
-    lyricsRomanized: `Take it, take it, don't break it
-Neoui sonkkeute daeun feeling
-Mangseoriji malgo naege dagawa
-Watch me now, take it right now`,
+    lyricsKorean: `Just take it, take it
+Yeah, take it, take it (ooh, yeah)
+Just take it, take it (ah-ah, yeah-yeah-yeah)
+(Yeah, take it, take it)
+
+대체 뭘 망설이니, baby? (So picky, picky)
+답답한 너도처럼, baby (just take it, take it)
+밀고 당길 뻔한 루틴까지, baby
+재미없어 난 필요 없는 걸 (I'm sassy, sassy)
+
+I-I-I-I-I'm so curious
+Not, not, not, not too serious
+고민하지 말고 빨리 (so picky, picky)
+그만둬 서툰 계산 따윈 no way
+
+모두가 날 원한 대도 쉽게 다가올 순 없어
+Picky, picky, picky (so picky, picky)
+갑자기 삐뚤어지면 (hey, yeah, yeah)
+또 뿔나 너를 할퀼 걸 (hey, yeah, yeah)`,
+    lyricsRomanized: `Just take it, take it
+Yeah, take it, take it (ooh, yeah)
+Just take it, take it (ah-ah, yeah-yeah-yeah)
+(Yeah, take it, take it)
+
+Daeche mwol mangseorini, baby? (So picky, picky)
+Dapdap-han neodocheoreom, baby (just take it, take it)
+Milgo danggil ppeonhan rutinkkaji, baby
+Jaemieopseo nan piryo eomneun geol (I'm sassy, sassy)
+
+I-I-I-I-I'm so curious
+Not, not, not, not too serious
+Gominhaji malgo ppalli (so picky, picky)
+Geumandwo seotun gyesan ttawin no way
+
+Moduga nal wonhan daedo swipge dagaol sun eopseo
+Picky, picky, picky (so picky, picky)
+Gapjagi ppittureojimyeon (hey, yeah, yeah)
+Tto ppulna neoreul halkwil geol (hey, yeah, yeah)`,
   },
 ];
 

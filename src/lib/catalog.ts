@@ -558,10 +558,18 @@ function parseTracksSnapshot(snap: QuerySnapshot<DocumentData>): Track[] {
   for (const d of snap.docs) {
     const data = d.data() as Track;
     const id = data.id || d.id;
+    const base = map.get(id);
+    const lyricsKorean = data.lyricsKorean?.trim() || base?.lyricsKorean;
+    const lyricsRomanized = data.lyricsRomanized?.trim() || base?.lyricsRomanized;
+    const lyricsAvailable = Boolean(data.lyricsAvailable || lyricsKorean || lyricsRomanized);
     map.set(id, {
+      ...base,
       ...data,
       id,
       releaseIds: Array.isArray(data.releaseIds) ? data.releaseIds : [data.albumId],
+      lyricsAvailable,
+      ...(lyricsKorean ? { lyricsKorean } : {}),
+      ...(lyricsRomanized ? { lyricsRomanized } : {}),
     });
   }
 
@@ -785,10 +793,24 @@ export function useTracks() {
   const { staged } = useStagedCatalog();
 
   const merged = useMemo(() => {
+    const staticMap = new Map<string, Track>();
+    for (const st of staticTracks) {
+      staticMap.set(st.id, st);
+    }
     const map = new Map<string, Track>();
     for (const t of query.data) {
       if (!staged.deletedTrackIds.includes(t.id)) {
-        map.set(t.id, t);
+        const base = staticMap.get(t.id);
+        const lyricsKorean = t.lyricsKorean?.trim() || base?.lyricsKorean;
+        const lyricsRomanized = t.lyricsRomanized?.trim() || base?.lyricsRomanized;
+        const lyricsAvailable = Boolean(t.lyricsAvailable || lyricsKorean || lyricsRomanized);
+        map.set(t.id, {
+          ...base,
+          ...t,
+          lyricsAvailable,
+          ...(lyricsKorean ? { lyricsKorean } : {}),
+          ...(lyricsRomanized ? { lyricsRomanized } : {}),
+        });
       }
     }
     for (const t of Object.values(staged.upsertedTracks)) {
