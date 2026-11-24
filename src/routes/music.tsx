@@ -86,7 +86,7 @@ function MusicPage() {
       <PageHeader
         eyebrow={`${tracks.length} tracks`}
         title="Music"
-        subtitle="Complete archive of IVE discography & tracks with simulated playback."
+        subtitle="Tap any track to stream full eras, member solos, and synchronized lyrics."
       />
 
       <div className="flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -169,10 +169,14 @@ function MusicPage() {
         </div>
       )}
 
-      <div className="mt-4 space-y-2.5 px-4">
-        {visible.map((track) => (
-          <SongCard key={track.id} track={track} queue={queue} />
-        ))}
+      <div className="mt-4 px-3">
+        <div className="editorial-rule divide-y divide-white/[0.06] border-t pt-1">
+          {visible.map((track, idx) => (
+            <div key={track.id} className="py-0.5">
+              <SongCard track={track} queue={queue} index={idx + 1} />
+            </div>
+          ))}
+        </div>
       </div>
 
       {visible.length === 0 && (

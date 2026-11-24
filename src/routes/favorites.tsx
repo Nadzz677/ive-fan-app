@@ -113,10 +113,14 @@ function FavoritesPage() {
         <section className="mb-9">
           <SectionHeader eyebrow={`${songs.length} TRACKS`} title="Saved Songs" />
           {songs.length > 0 ? (
-            <div className="space-y-2.5 px-5">
-              {songs.map((track) => (
-                <SongCard key={track.id} track={track} queue={songs.map((t) => t.id)} />
-              ))}
+            <div className="px-3">
+              <div className="editorial-rule divide-y divide-white/[0.06] border-t pt-1">
+                {songs.map((track, idx) => (
+                  <div key={track.id} className="py-0.5">
+                    <SongCard track={track} queue={songs.map((t) => t.id)} index={idx + 1} />
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <EmptyState

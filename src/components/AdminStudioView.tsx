@@ -26,11 +26,17 @@ import {
   Star,
   Sun,
   Trash2,
+  Unlink,
+  Upload,
   Users,
   Volume2,
   X,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import {
+  isItunesPreviewUrl,
+  uploadTrackAudioToStorage,
+} from "@/lib/audio-sources";
 import {
   clearAllStagedChanges,
   discardStagedChange,
@@ -157,6 +163,8 @@ export function AdminStudioView() {
   const [trackAudioUrl, setTrackAudioUrl] = useState("");
   const [trackLyricsKr, setTrackLyricsKr] = useState("");
   const [trackLyricsRom, setTrackLyricsRom] = useState("");
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Member Editor form
   const [selectedMemberId, setSelectedMemberId] = useState(members[0]?.id ?? "yujin");
@@ -282,6 +290,74 @@ export function AdminStudioView() {
     setTrackAudioUrl(track.audioUrl ?? "");
     setTrackLyricsKr(track.lyricsKorean ?? "");
     setTrackLyricsRom(track.lyricsRomanized ?? "");
+  };
+
+  const handleAudioFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const candidateId =
+      editingTrackId ??
+      `${selectedAlbumId}-${slugify(trackTitle || file.name.replace(/\.[^.]+$/, "")).slice(0, 16)}`;
+
+    setUploadingAudio(true);
+    setUploadProgress(0);
+    setStatus(null);
+    try {
+      const { downloadUrl, durationSeconds } = await uploadTrackAudioToStorage(
+        candidateId,
+        file,
+        (pct) => setUploadProgress(pct),
+      );
+      setTrackAudioUrl(downloadUrl);
+      if (durationSeconds && durationSeconds >= 10) {
+        setTrackDurationSec(String(durationSeconds));
+      }
+      setStatus(
+        `Uploaded "${file.name}" to Firebase Storage CDN (${durationSeconds ? `${durationSeconds}s` : "ready"}). Click "Stage Song" to save!`,
+      );
+    } catch (err: unknown) {
+      setStatus(
+        err instanceof Error
+          ? `Upload error: ${err.message}`
+          : "Failed to upload audio file to Firebase Storage.",
+      );
+    } finally {
+      setUploadingAudio(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleUnlinkTrackAudio = (track: Track) => {
+    const parentAlbum = albums.find((a) => a.id === track.albumId);
+    const cleaned: Track = { ...track };
+    delete cleaned.audioUrl;
+    stageTrackSave(cleaned, parentAlbum);
+    if (editingTrackId === track.id) {
+      setTrackAudioUrl("");
+    }
+    setStatus(
+      `Staged audio unlink for "${track.title}". Click "Push Live Changes" to permanently remove it from Firestore.`,
+    );
+  };
+
+  const handleUnlinkAllItunesPreviews = () => {
+    const itunesLinked = tracks.filter((t) => isItunesPreviewUrl(t.audioUrl));
+    if (itunesLinked.length === 0) {
+      setStatus("No 30-second iTunes preview links found in your catalog.");
+      return;
+    }
+    for (const t of itunesLinked) {
+      const parentAlbum = albums.find((a) => a.id === t.albumId);
+      const cleaned: Track = { ...t };
+      delete cleaned.audioUrl;
+      stageTrackSave(cleaned, parentAlbum);
+    }
+    if (isItunesPreviewUrl(trackAudioUrl)) {
+      setTrackAudioUrl("");
+    }
+    setStatus(
+      `Staged unlinking of ${itunesLinked.length} 30-second iTunes preview track${itunesLinked.length === 1 ? "" : "s"}! Click "Push Live Changes" to apply.`,
+    );
   };
 
   const handleStageTrack = (e: React.FormEvent) => {
@@ -503,6 +579,8 @@ export function AdminStudioView() {
   });
   const parsedYoutubeIdPreview = extractYouTubeId(trackYoutubeUrl);
   const parsedDirectAudioPreview = resolveDirectAudioUrl(trackAudioUrl);
+  const isSpotifyLinkWarning = trackAudioUrl.toLowerCase().includes("spotify.com");
+  const itunesPreviewTracksCount = tracks.filter((t) => isItunesPreviewUrl(t.audioUrl)).length;
   const tracksWithAudioCount = tracks.filter(
     (t) => Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl)),
   ).length;
@@ -1466,7 +1544,7 @@ export function AdminStudioView() {
                 </div>
 
                 <div className={cn("overflow-hidden rounded-xl border", panelBg)}>
-                  <div className={cn("flex items-center justify-between border-b px-5 py-3.5", borderClass)}>
+                  <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5", borderClass)}>
                     <div>
                       <h2 className={cn("text-sm font-semibold", headingText)}>
                         {trackViewFilter === "ALL"
@@ -1474,10 +1552,21 @@ export function AdminStudioView() {
                           : `${albums.find((a) => a.id === trackViewFilter)?.title ?? "Album"} Tracklist (${selectedAlbumTracks.length})`}
                       </h2>
                       <p className={cn("text-xs", subText)}>
-                        Click Edit on any song to attach Direct Cloud Audio (0ms instant stream) or
-                        YouTube links.
+                        Click Edit on any song to manually upload a full .MP3/.M4A file or attach a
+                        direct cloud / YouTube link.
                       </p>
                     </div>
+                    {itunesPreviewTracksCount > 0 && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={handleUnlinkAllItunesPreviews}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/15 px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-xs transition-colors hover:bg-rose-500/25 disabled:opacity-50 dark:text-rose-300"
+                      >
+                        <Unlink size={13} />
+                        Unlink All 30s iTunes Previews ({itunesPreviewTracksCount})
+                      </button>
+                    )}
                   </div>
 
                   {selectedAlbumTracks.length === 0 ? (
@@ -1491,6 +1580,7 @@ export function AdminStudioView() {
                         const isEditing = editingTrackId === t.id;
                         const ytId = extractYouTubeId(t.youtubeUrl);
                         const directUrl = resolveDirectAudioUrl(t.audioUrl);
+                        const isItunes = isItunesPreviewUrl(t.audioUrl);
                         const parentAlbumObj = albums.find((a) => a.id === t.albumId);
                         return (
                           <div
@@ -1521,8 +1611,15 @@ export function AdminStudioView() {
                                     {t.title}
                                   </p>
                                   {directUrl && (
-                                    <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-emerald-600 dark:text-emerald-300">
-                                      ⚡ Direct CDN Audio
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase",
+                                        isItunes
+                                          ? "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-300"
+                                          : "border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
+                                      )}
+                                    >
+                                      {isItunes ? "⚠ 30s iTunes Preview" : "⚡ Full Direct Audio"}
                                     </span>
                                   )}
                                   {ytId && (
@@ -1561,6 +1658,22 @@ export function AdminStudioView() {
                             </div>
 
                             <div className="flex shrink-0 items-center gap-1.5">
+                              {directUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnlinkTrackAudio(t)}
+                                  title={`Unlink direct audio from ${t.title}`}
+                                  className={cn(
+                                    "inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition-colors",
+                                    isItunes
+                                      ? "border-rose-500/40 bg-rose-500/15 text-rose-600 hover:bg-rose-500/25 dark:text-rose-300"
+                                      : "border-slate-700 bg-slate-800/80 text-slate-300 hover:border-rose-500/40 hover:text-rose-400",
+                                  )}
+                                >
+                                  <Unlink size={12} />
+                                  Unlink
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => loadTrackIntoForm(t)}
@@ -1667,16 +1780,25 @@ export function AdminStudioView() {
                     </div>
                   </div>
 
-                  {/* Direct Cloud Audio & YouTube Stream Box */}
+                  {/* Manual Full-Song Direct Cloud Audio & YouTube Stream Box */}
                   <div className={cn("space-y-3 rounded-lg border p-3.5", subPanelBg)}>
                     <div className="flex flex-wrap items-center justify-between gap-1.5">
                       <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
-                        <Volume2 size={13} /> Real Song Playback Source
+                        <Volume2 size={13} /> Manual Full-Song Audio Source
                       </span>
                       <div className="flex items-center gap-1.5">
-                        {parsedDirectAudioPreview && (
-                          <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-600 dark:text-emerald-300">
-                            ⚡ 0ms Direct Audio Ready
+                        {parsedDirectAudioPreview && !isSpotifyLinkWarning && (
+                          <span
+                            className={cn(
+                              "rounded px-2 py-0.5 font-mono text-[10px] font-semibold",
+                              isItunesPreviewUrl(trackAudioUrl)
+                                ? "bg-amber-500/15 text-amber-600 dark:text-amber-300"
+                                : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
+                            )}
+                          >
+                            {isItunesPreviewUrl(trackAudioUrl)
+                              ? "⚠ 30s iTunes Preview"
+                              : "⚡ 0ms Full Audio Ready"}
                           </span>
                         )}
                         {parsedYoutubeIdPreview && (
@@ -1687,22 +1809,79 @@ export function AdminStudioView() {
                       </div>
                     </div>
 
+                    {/* Full-Length File Upload Button */}
+                    <label
+                      className={cn(
+                        "flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-colors",
+                        uploadingAudio
+                          ? "border-indigo-500 bg-indigo-500/10 text-indigo-400"
+                          : "border-indigo-500/40 bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 dark:text-indigo-300",
+                      )}
+                    >
+                      <Upload size={14} />
+                      <span>
+                        {uploadingAudio
+                          ? `Uploading Full Track to Firebase Storage (${uploadProgress}%)...`
+                          : "Upload Full .MP3 / .M4A File from Computer"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac"
+                        disabled={uploadingAudio}
+                        onChange={(e) => void handleAudioFileUpload(e)}
+                        className="sr-only"
+                      />
+                    </label>
+
                     <div>
                       <label className={labelClass}>
-                        Option 1 (Fastest · 0ms Latency): Direct Audio / Cloud URL (.mp3, .m4a,
-                        Dropbox, Google Drive, Catbox, Cloudinary, Firebase Storage)
+                        Method 1 (0ms Instant Play): Direct Full Audio URL (.mp3, .m4a, Firebase
+                        Storage, Catbox, Dropbox, Google Drive)
                       </label>
                       <input
                         value={trackAudioUrl}
                         onChange={(e) => setTrackAudioUrl(e.target.value)}
-                        placeholder="https://files.catbox.moe/xxx.mp3 or Dropbox / Google Drive share link"
+                        placeholder="https://... (Upload .mp3/.m4a above or paste direct link)"
                         className={inputClass}
                       />
                     </div>
 
+                    {isSpotifyLinkWarning && (
+                      <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] leading-relaxed text-amber-600 dark:text-amber-300">
+                        <strong>Note on Spotify Links:</strong> Spotify URLs (
+                        <code>open.spotify.com</code>) use DRM encryption and only allow 30-second
+                        previews in web/mobile embeds. For full-length instant songs, upload an{" "}
+                        <code>.mp3</code> / <code>.m4a</code> file above or paste a direct
+                        Catbox/Dropbox/Google Drive/YouTube link.
+                      </div>
+                    )}
+
+                    {parsedDirectAudioPreview && !isSpotifyLinkWarning && (
+                      <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/5 p-2">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-emerald-500">
+                            ⚡ Live Direct Audio Preview (0ms HTML5 Engine)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setTrackAudioUrl("")}
+                            className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-rose-500 hover:underline"
+                          >
+                            <Unlink size={10} /> Unlink / Clear Audio URL
+                          </button>
+                        </div>
+                        <audio
+                          controls
+                          preload="metadata"
+                          src={parsedDirectAudioPreview}
+                          className="h-8 w-full"
+                        />
+                      </div>
+                    )}
+
                     <div>
                       <label className={labelClass}>
-                        Option 2: YouTube URL or 11-Char Video ID
+                        Method 2 (Full-Song Fallback): YouTube URL or 11-Char Video ID
                       </label>
                       <input
                         value={trackYoutubeUrl}

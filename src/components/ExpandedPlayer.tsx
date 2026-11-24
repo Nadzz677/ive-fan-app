@@ -48,6 +48,8 @@ export function ExpandedPlayer() {
   const [drag, setDrag] = useState(0);
   const [viewMode, setViewMode] = useState<"artwork" | "lyrics">("artwork");
   const [lyricLang, setLyricLang] = useState<"korean" | "romanized">("korean");
+  // Post-close shield prevents touch release / synthesized click from hitting background cards while closing
+  const [closingShield, setClosingShield] = useState(false);
   const startY = useRef<number | null>(null);
   const lastCloseAtRef = useRef<number>(0);
 
@@ -59,8 +61,6 @@ export function ExpandedPlayer() {
 
   const { getAlbum, getTrackArtwork } = useCatalog();
 
-  // Keep the modal mounted whenever a track is active so opening/closing uses pure GPU transforms
-  // and NEVER triggers a DOM mount/unmount or body-overflow reflow that pauses the WebView audio!
   if (!currentTrack) return null;
 
   const album = getAlbum(currentTrack.albumId);
@@ -68,8 +68,10 @@ export function ExpandedPlayer() {
 
   const close = () => {
     lastCloseAtRef.current = Date.now();
+    setClosingShield(true);
     setDrag(0);
     setExpanded(false);
+    window.setTimeout(() => setClosingShield(false), 300);
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -100,22 +102,29 @@ export function ExpandedPlayer() {
 
   return (
     <div
-      role="dialog"
-      aria-modal={expanded}
       aria-hidden={!expanded}
-      aria-label="Now playing"
       style={{
-        transform: expanded
-          ? `translate3d(0, ${drag}px, 0) scale(${Math.max(0.92, 1 - drag / 1600)})`
-          : "translate3d(0, 104%, 0) scale(0.96)",
-        opacity: expanded ? Math.max(0.35, 1 - drag / 700) : 0,
-        pointerEvents: expanded ? "auto" : "none",
-        transition: dragging
-          ? "none"
-          : "transform 0.36s var(--ease-spring), opacity 0.26s ease",
+        pointerEvents: expanded || closingShield ? "auto" : "none",
       }}
-      className="fixed inset-0 z-50 overflow-hidden overscroll-contain will-change-transform"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-50 overflow-hidden"
     >
+      <div
+        role="dialog"
+        aria-modal={expanded}
+        aria-label="Now playing"
+        style={{
+          transform: expanded
+            ? `translate3d(0, ${drag}px, 0) scale(${Math.max(0.92, 1 - drag / 1600)})`
+            : "translate3d(0, 104%, 0) scale(0.96)",
+          opacity: expanded ? Math.max(0.35, 1 - drag / 700) : 0,
+          transition: dragging
+            ? "none"
+            : "transform 0.36s var(--ease-spring), opacity 0.26s ease",
+        }}
+        className="relative h-full w-full overflow-hidden overscroll-contain will-change-transform"
+      >
       <div className="stage-gradient absolute inset-0" aria-hidden="true" />
       <div className="relative flex h-full flex-col overflow-y-auto overscroll-contain px-5 pb-8 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Drag handle / header */}
@@ -419,6 +428,7 @@ export function ExpandedPlayer() {
             Swipe down or tap top arrow to minimize · playback continues
           </p>
         </div>
+      </div>
       </div>
     </div>
   );

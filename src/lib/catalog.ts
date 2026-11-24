@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -402,7 +403,14 @@ export async function pushStagedChangesToFirestore(): Promise<number> {
     count++;
   }
   for (const track of Object.values(stagedState.upsertedTracks)) {
-    batch.set(doc(db, "tracks", track.id), stripUndefined(track), { merge: true });
+    const payload = stripUndefined(track);
+    if (!track.audioUrl?.trim()) {
+      payload["audioUrl"] = deleteField();
+    }
+    if (!track.youtubeUrl?.trim()) {
+      payload["youtubeUrl"] = deleteField();
+    }
+    batch.set(doc(db, "tracks", track.id), payload, { merge: true });
     count++;
   }
   for (const trackId of stagedState.deletedTrackIds) {

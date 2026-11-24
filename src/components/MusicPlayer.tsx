@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { Pause, Play, Shuffle, SkipBack, SkipForward } from "lucide-react";
 import { trackDuration } from "@/data/albums";
@@ -30,10 +30,23 @@ export function MusicPlayer() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [dragX, setDragX] = useState(0);
   const [swiping, setSwiping] = useState(false);
+  // Delay disabling pointer-events after expanding so mobile's synthesized `click` event
+  // hits this container (and gets swallowed) instead of passing through to cards underneath!
+  const [allowPointerThrough, setAllowPointerThrough] = useState(false);
+
   const startX = useRef<number | null>(null);
   const startY = useRef<number | null>(null);
-  const moved = useRef(false);
+  const didSwipeRef = useRef(false);
   const lastExpandToggleRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (expanded) {
+      const id = window.setTimeout(() => setAllowPointerThrough(true), 320);
+      return () => window.clearTimeout(id);
+    }
+    setAllowPointerThrough(false);
+    return undefined;
+  }, [expanded]);
 
   const { getAlbum, getTrackArtwork } = useCatalog();
 
@@ -43,6 +56,7 @@ export function MusicPlayer() {
   const total = effectiveDuration || trackDuration(currentTrack);
 
   const handlePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
     const target = e.target as HTMLElement | null;
     if (target?.closest('button, [role="slider"], input, a')) {
       return;
@@ -50,7 +64,7 @@ export function MusicPlayer() {
     if (e.button !== 0 && e.pointerType === "mouse") return;
     startX.current = e.clientX;
     startY.current = e.clientY;
-    moved.current = false;
+    didSwipeRef.current = false;
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -58,18 +72,20 @@ export function MusicPlayer() {
     const deltaX = e.clientX - startX.current;
     const deltaY = e.clientY - startY.current;
 
-    if (!swiping && Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+    if (!swiping && Math.abs(deltaX) > 10 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
       setSwiping(true);
-      moved.current = true;
+      didSwipeRef.current = true;
       e.currentTarget.setPointerCapture?.(e.pointerId);
     }
 
     if (swiping) {
+      e.stopPropagation();
       setDragX(deltaX);
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerUp = (e: React.PointerEvent) => {
+    e.stopPropagation();
     if (startX.current === null) return;
 
     if (swiping) {
@@ -78,16 +94,30 @@ export function MusicPlayer() {
       } else if (dragX < -SWIPE_THRESHOLD) {
         previous();
       }
-    } else if (!moved.current) {
-      lastExpandToggleRef.current = Date.now();
-      setExpanded(true);
     }
 
     startX.current = null;
     startY.current = null;
     setSwiping(false);
     setDragX(0);
-    moved.current = false;
+  };
+
+  const handleSurfaceClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (didSwipeRef.current) {
+      didSwipeRef.current = false;
+      return;
+    }
+
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, [role="slider"], input, a')) {
+      return;
+    }
+
+    lastExpandToggleRef.current = Date.now();
+    setExpanded(true);
   };
 
   const visualTranslate = Math.max(-50, Math.min(50, dragX * 0.35));
@@ -95,19 +125,25 @@ export function MusicPlayer() {
   return (
     <div
       className="fixed inset-x-0 bottom-[4.35rem] z-40 px-3.5 transition-opacity duration-200"
-      style={{ opacity: expanded ? 0 : 1, pointerEvents: expanded ? "none" : undefined }}
+      style={{
+        opacity: expanded ? 0 : 1,
+        pointerEvents: expanded && allowPointerThrough ? "none" : "auto",
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       <div
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onClick={handleSurfaceClick}
         style={{
           transform: `translateX(${visualTranslate}px)`,
           transition: swiping ? "none" : "transform 0.28s var(--ease-spring)",
         }}
         className={cn(
-          "glass-panel relative mx-auto max-w-md overflow-hidden rounded-[14px] px-2.5 pt-1.5 pb-0.5 cursor-pointer touch-pan-y select-none transition-shadow",
+          "glass-panel relative mx-auto max-w-md cursor-pointer select-none overflow-hidden rounded-[14px] px-2.5 pb-0.5 pt-1.5 touch-pan-y transition-shadow",
           swiping && "ring-1 ring-primary/50 shadow-lg",
         )}
       >
@@ -155,6 +191,7 @@ export function MusicPlayer() {
           <div
             className="flex shrink-0 items-center gap-0.5"
             onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
@@ -167,9 +204,7 @@ export function MusicPlayer() {
               }}
               className={cn(
                 "press relative grid h-7 w-7 place-items-center rounded-full transition-colors",
-                shuffle
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground",
+                shuffle ? "text-primary" : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Shuffle size={13} />

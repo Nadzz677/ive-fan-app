@@ -7,6 +7,7 @@ import {
   persistentMultipleTabManager,
   type Firestore,
 } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 const env = import.meta.env as Record<string, string | undefined>;
 
@@ -35,6 +36,7 @@ const firebaseConfig = {
 let app: FirebaseApp | null = null;
 let firestore: Firestore | null = null;
 let firebaseAuth: Auth | null = null;
+let firebaseStorage: FirebaseStorage | null = null;
 
 if (typeof window !== "undefined" && isFirebaseConfigured) {
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -50,8 +52,14 @@ if (typeof window !== "undefined" && isFirebaseConfigured) {
     firestore = getFirestore(app);
   }
   firebaseAuth = getAuth(app);
+  try {
+    firebaseStorage = getStorage(app);
+  } catch {
+    firebaseStorage = null;
+  }
 }
 
 export const firebaseApp = app;
 export const db = firestore;
 export const auth = firebaseAuth;
+export const storage = firebaseStorage;

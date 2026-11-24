@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { tracks as allTracks, trackDuration } from "@/data/albums";
+import { getInstantAudioSrc, warmAudioCacheInBackground } from "./audio-sources";
 import { getLiveTrack, getLiveTrackArtwork, useCatalog } from "./catalog";
 import type { Track } from "@/types";
 import { pushRecentlyPlayed } from "./recently-played";
@@ -137,6 +138,9 @@ declare global {
   interface Window {
     YT?: YTGlobal;
     onYouTubeIframeAPIReady?: () => void;
+    IveNativeAudio?: {
+      setPlaybackState: (playing: boolean, title: string, artist: string) => void;
+    };
   }
 }
 
@@ -284,7 +288,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [currentId, catalogTracks]);
 
   const directAudioUrl = useMemo(
-    () => resolveDirectAudioUrl(currentTrack?.audioUrl),
+    () => getInstantAudioSrc(currentTrack?.audioUrl),
     [currentTrack?.audioUrl],
   );
   const youtubeId = useMemo(
@@ -407,7 +411,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if (nextQueue?.length) setQueue(nextQueue);
       const targetTrack =
         catalogTracks.find((t) => t.id === trackId) ?? getLiveTrack(trackId) ?? null;
-      const targetDirectAudio = resolveDirectAudioUrl(targetTrack?.audioUrl);
+      const targetDirectAudio = getInstantAudioSrc(targetTrack?.audioUrl);
       const targetYtId = extractYouTubeId(targetTrack?.youtubeUrl);
 
       clearSeekLock();
@@ -466,7 +470,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
       const targetTrack =
         catalogTracks.find((t) => t.id === nextId) ?? getLiveTrack(nextId) ?? null;
-      const targetDirectAudio = resolveDirectAudioUrl(targetTrack?.audioUrl);
+      const targetDirectAudio = getInstantAudioSrc(targetTrack?.audioUrl);
       const targetYtId = extractYouTubeId(targetTrack?.youtubeUrl);
 
       clearSeekLock();
@@ -853,29 +857,45 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(poll);
   }, [useYouTubeEngine, isPlaying]);
 
-  // Keep playback alive when app is minimized to background or screen locks
+  // Sync playback state with native Android Foreground MediaPlayback Service (`AudioKeepAliveService`)
+  // and override Chromium's Page Visibility API so YouTube IFrame never auto-pauses when minimized!
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const active = Boolean(isPlaying && currentTrack);
+      window.IveNativeAudio?.setPlaybackState(
+        active,
+        currentTrack?.title ?? "IVE: Dive Archive",
+        currentTrack?.artist ? `${currentTrack.artist} · IVE` : "IVE",
+      );
+    } catch {
+      /* ignore on web browser */
+    }
+  }, [isPlaying, currentTrack]);
+
+  // Prevent Chromium / YouTube IFrame inside Android WebView from detecting background visibility
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const onVisibilityChange = () => {
-      if (document.hidden && isPlayingRef.current) {
-        if (useHtmlAudioEngine && audioRef.current && audioRef.current.paused) {
-          void audioRef.current.play().catch(() => {});
-        } else if (useYouTubeEngine && ytPlayerRef.current && ytReadyRef.current) {
-          window.setTimeout(() => {
-            if (isPlayingRef.current) {
-              try {
-                ytPlayerRef.current?.playVideo();
-              } catch {
-                /* ignore */
-              }
-            }
-          }, 80);
-        }
+    try {
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        get: () => false,
+      });
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "visible",
+      });
+    } catch {
+      /* ignore if browser locks property */
+    }
+    const blockVisibilityPause = (e: Event) => {
+      if (isPlayingRef.current) {
+        e.stopImmediatePropagation();
       }
     };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [useYouTubeEngine, useHtmlAudioEngine]);
+    document.addEventListener("visibilitychange", blockVisibilityPause, true);
+    return () => document.removeEventListener("visibilitychange", blockVisibilityPause, true);
+  }, []);
 
   // Register MediaSession metadata & lockscreen/notification controls
   useEffect(() => {
@@ -925,6 +945,24 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       audio.pause();
     }
   }, [useHtmlAudioEngine, directAudioUrl, isPlaying]);
+
+  // Preload & cache the current and next queued tracks in the background for 0ms Next-track skips!
+  useEffect(() => {
+    if (!currentId) return;
+    const curr = catalogTracks.find((t) => t.id === currentId);
+    if (curr?.audioUrl) {
+      void warmAudioCacheInBackground(curr.audioUrl);
+    }
+    const idx = queue.indexOf(currentId);
+    if (idx !== -1 && queue.length > 1) {
+      const nextIdx = (idx + 1) % queue.length;
+      const nextTrackId = queue[nextIdx];
+      const nextTrack = catalogTracks.find((t) => t.id === nextTrackId);
+      if (nextTrack?.audioUrl) {
+        void warmAudioCacheInBackground(nextTrack.audioUrl);
+      }
+    }
+  }, [currentId, queue, catalogTracks]);
 
   // ---------------------------------------------------------------------------
   // ENGINE 3: Simulated Timer Fallback
@@ -1022,7 +1060,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
           <audio
             ref={audioRef}
             preload="auto"
-            crossOrigin="anonymous"
             onLoadedMetadata={(e) => {
               const dur = e.currentTarget.duration;
               if (dur && Number.isFinite(dur)) setRealDuration(dur);
