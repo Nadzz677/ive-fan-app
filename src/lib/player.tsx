@@ -9,7 +9,7 @@ import {
 } from "react";
 import { tracks as allTracks, trackDuration } from "@/data/albums";
 import { getInstantAudioSrc, warmAudioCacheInBackground } from "./audio-sources";
-import { getLiveTrack, getLiveTrackArtwork, useCatalog } from "./catalog";
+import { getLiveAlbum, getLiveTrack, getLiveTrackArtwork, useCatalog } from "./catalog";
 import type { Track } from "@/types";
 import { pushRecentlyPlayed } from "./recently-played";
 import { useSettings } from "./settings";
@@ -139,8 +139,18 @@ declare global {
     YT?: YTGlobal;
     onYouTubeIframeAPIReady?: () => void;
     IveNativeAudio?: {
-      setPlaybackState: (playing: boolean, title: string, artist: string) => void;
+      updateMediaSession: (
+        playing: boolean,
+        title: string,
+        artist: string,
+        album: string,
+        artworkUrl: string,
+        positionSeconds: number,
+        durationSeconds: number,
+      ) => void;
+      stopMediaSession: () => void;
     };
+    __iveNativeMediaCommand?: (command: string, seekSeconds?: number) => void;
   }
 }
 
@@ -514,12 +524,38 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         ytPlayerRef.current.seekTo(0, true);
         ytPlayerRef.current.playVideo();
       }
+      if (currentTrack && typeof window !== "undefined" && window.IveNativeAudio) {
+        try {
+          const albumTitle = getLiveAlbum(currentTrack.albumId)?.title ?? "IVE Archive";
+          const artworkUrl = getLiveTrackArtwork(currentTrack) ?? "";
+          window.IveNativeAudio.updateMediaSession(
+            true,
+            currentTrack.title,
+            currentTrack.artist ?? "IVE",
+            albumTitle,
+            artworkUrl,
+            0,
+            effectiveDuration,
+          );
+        } catch {
+          /* ignore */
+        }
+      }
     } else if (settings.autoplay || repeat === "all") {
       next();
     } else {
       setIsPlaying(false);
     }
-  }, [clearSeekLock, repeat, settings.autoplay, next, useYouTubeEngine, useHtmlAudioEngine]);
+  }, [
+    clearSeekLock,
+    repeat,
+    settings.autoplay,
+    next,
+    useYouTubeEngine,
+    useHtmlAudioEngine,
+    currentTrack,
+    effectiveDuration,
+  ]);
 
   const handleTrackFinishRef = useRef(handleTrackFinish);
   handleTrackFinishRef.current = handleTrackFinish;
@@ -566,6 +602,24 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       seekLockUntilRef.current = Date.now() + 2200;
       pendingStartSecRef.current = clamped;
 
+      if (currentTrack && typeof window !== "undefined" && window.IveNativeAudio) {
+        try {
+          const albumTitle = getLiveAlbum(currentTrack.albumId)?.title ?? "IVE Archive";
+          const artworkUrl = getLiveTrackArtwork(currentTrack) ?? "";
+          window.IveNativeAudio.updateMediaSession(
+            isPlayingRef.current,
+            currentTrack.title,
+            currentTrack.artist ?? "IVE",
+            albumTitle,
+            artworkUrl,
+            clamped,
+            effectiveDuration,
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+
       if (useHtmlAudioEngine && audioRef.current) {
         try {
           audioRef.current.currentTime = clamped;
@@ -601,7 +655,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [effectiveDuration, useYouTubeEngine, useHtmlAudioEngine, youtubeId],
+    [effectiveDuration, useYouTubeEngine, useHtmlAudioEngine, youtubeId, currentTrack],
   );
 
   const stopListening = useCallback(() => {
@@ -621,6 +675,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
     if (audioRef.current) {
       audioRef.current.pause();
+    }
+    try {
+      window.IveNativeAudio?.stopMediaSession();
+    } catch {
+      /* ignore */
     }
     try {
       window.localStorage.removeItem(LAST_TRACK_KEY);
@@ -857,21 +916,53 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(poll);
   }, [useYouTubeEngine, isPlaying]);
 
-  // Sync playback state with native Android Foreground MediaPlayback Service (`AudioKeepAliveService`)
-  // and override Chromium's Page Visibility API so YouTube IFrame never auto-pauses when minimized!
+  // Sync rich Spotify-style MediaSession state (Title, Artist, Album, Cover Art, Scrubbing Position)
+  // with native Android `AudioKeepAliveService` (promotes into Android Media Panel & Vivo Origin Island!)
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !window.IveNativeAudio) return;
     try {
-      const active = Boolean(isPlaying && currentTrack);
-      window.IveNativeAudio?.setPlaybackState(
-        active,
-        currentTrack?.title ?? "IVE: Dive Archive",
-        currentTrack?.artist ? `${currentTrack.artist} · IVE` : "IVE",
+      if (!currentTrack) {
+        window.IveNativeAudio.stopMediaSession();
+        return;
+      }
+      const albumTitle = getLiveAlbum(currentTrack.albumId)?.title ?? "IVE Archive";
+      const artworkUrl = getLiveTrackArtwork(currentTrack) ?? "";
+      window.IveNativeAudio.updateMediaSession(
+        isPlaying,
+        currentTrack.title,
+        currentTrack.artist ?? "IVE",
+        albumTitle,
+        artworkUrl,
+        progressRef.current,
+        effectiveDuration,
       );
     } catch {
       /* ignore on web browser */
     }
-  }, [isPlaying, currentTrack]);
+  }, [isPlaying, currentTrack, effectiveDuration]);
+
+  // Receive hardware / lockscreen / Vivo Origin Island / notification media button commands from Android
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.__iveNativeMediaCommand = (command: string, seekSeconds = 0) => {
+      if (command === "play") {
+        if (!isPlayingRef.current) toggle();
+      } else if (command === "pause") {
+        if (isPlayingRef.current) toggle();
+      } else if (command === "toggle") {
+        toggle();
+      } else if (command === "next") {
+        next();
+      } else if (command === "prev") {
+        previous();
+      } else if (command === "seek" && typeof seekSeconds === "number") {
+        seek(seekSeconds);
+      }
+    };
+    return () => {
+      delete window.__iveNativeMediaCommand;
+    };
+  }, [toggle, next, previous, seek]);
 
   // Prevent Chromium / YouTube IFrame inside Android WebView from detecting background visibility
   useEffect(() => {
@@ -897,8 +988,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("visibilitychange", blockVisibilityPause, true);
   }, []);
 
-  // Register MediaSession metadata & lockscreen/notification controls
+  // Register MediaSession metadata & lockscreen/notification controls (web browsers only;
+  // native Android uses AudioKeepAliveService's dedicated MediaSession to avoid dual-session collisions)
   useEffect(() => {
+    if (typeof window !== "undefined" && window.IveNativeAudio) return;
     if (typeof navigator === "undefined" || !("mediaSession" in navigator) || !currentTrack) return;
     try {
       const artworkUrl = getLiveTrackArtwork(currentTrack);

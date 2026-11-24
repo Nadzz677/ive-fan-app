@@ -8,58 +8,253 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.MediaMetadata;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
-import androidx.core.app.NotificationCompat;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Native Android Foreground Media Playback Service.
- * Keeps the Linux process, CPU partial WakeLock, Wi-Fi radio, and WebView audio thread
- * alive when the user minimizes IVE: Dive Archive to the Home screen or switches apps.
+ * Spotify-Style Android System MediaSession + Foreground Playback Service.
+ *
+ * 1. Registers an active `android.media.session.MediaSession` + `Notification.MediaStyle`
+ *    so Android 13–17 promotes IVE: Dive Archive into the Quick Settings Media Carousel,
+ *    Lock Screen Player, and Vivo Origin Island / Dynamic Island pill!
+ * 2. Acquires CPU WakeLock + Low-Latency WifiLock while leaving AudioFocus ownership
+ *    exclusively to `KeepAliveWebView` (prevents intra-app AudioFocus self-theft).
+ * 3. Downloads album cover artwork asynchronously and routes hardware/notification
+ *    Play, Pause, Next, Previous, and Seek controls directly back to `player.tsx`.
  */
 public class AudioKeepAliveService extends Service {
-    public static final String CHANNEL_ID = "ive_dive_archive_playback";
+    public static volatile boolean isPlaybackActive = false;
+    public static volatile boolean isSessionActive = false;
+
+    public interface MediaCommandListener {
+        void onCommand(String command, double seekSeconds);
+    }
+
+    private static volatile MediaCommandListener commandListener;
+
+    public static void setMediaCommandListener(MediaCommandListener listener) {
+        commandListener = listener;
+    }
+
+    public static final String CHANNEL_ID = "ive_dive_archive_media_session";
     public static final int NOTIFICATION_ID = 20211201;
-    public static final String ACTION_START_OR_UPDATE = "com.ive.divearchive.START_OR_UPDATE";
-    public static final String ACTION_STOP = "com.ive.divearchive.STOP";
+
+    public static final String ACTION_UPDATE_MEDIA = "com.ive.divearchive.UPDATE_MEDIA";
+    public static final String ACTION_STOP_SERVICE = "com.ive.divearchive.STOP_SERVICE";
+    public static final String ACTION_BTN_PREV = "com.ive.divearchive.BTN_PREV";
+    public static final String ACTION_BTN_TOGGLE = "com.ive.divearchive.BTN_TOGGLE";
+    public static final String ACTION_BTN_NEXT = "com.ive.divearchive.BTN_NEXT";
+
+    public static final String EXTRA_PLAYING = "extra_playing";
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_ARTIST = "extra_artist";
+    public static final String EXTRA_ALBUM = "extra_album";
+    public static final String EXTRA_ARTWORK_URL = "extra_artwork_url";
+    public static final String EXTRA_POSITION_MS = "extra_position_ms";
+    public static final String EXTRA_DURATION_MS = "extra_duration_ms";
 
+    private MediaSession mediaSession;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
+
+    private final ExecutorService artworkExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    private String currentTitle = "IVE: Dive Archive";
+    private String currentArtist = "IVE";
+    private String currentAlbum = "Dive Archive";
+    private String currentArtworkUrl = "";
+    private Bitmap currentArtworkBitmap = null;
+    private boolean currentPlaying = false;
+    private long currentPositionMs = 0L;
+    private long currentDurationMs = 180000L;
 
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
-        acquireLocks();
+        initMediaSession();
+    }
+
+    private void initMediaSession() {
+        mediaSession = new MediaSession(this, "IVEDiveArchiveMediaSession");
+        mediaSession.setCallback(new MediaSession.Callback() {
+            @Override
+            public void onPlay() {
+                dispatchToWeb("play", 0);
+            }
+
+            @Override
+            public void onPause() {
+                dispatchToWeb("pause", 0);
+            }
+
+            @Override
+            public void onSkipToNext() {
+                dispatchToWeb("next", 0);
+            }
+
+            @Override
+            public void onSkipToPrevious() {
+                dispatchToWeb("prev", 0);
+            }
+
+            @Override
+            public void onSeekTo(long pos) {
+                dispatchToWeb("seek", pos / 1000.0);
+            }
+
+            @Override
+            public void onStop() {
+                dispatchToWeb("pause", 0);
+            }
+        });
+        mediaSession.setActive(true);
+    }
+
+    private void dispatchToWeb(String cmd, double seekSec) {
+        MediaCommandListener listener = commandListener;
+        if (listener != null) {
+            listener.onCommand(cmd, seekSec);
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+        if (intent == null) {
+            return START_STICKY;
+        }
+
+        String action = intent.getAction();
+        if (ACTION_STOP_SERVICE.equals(action)) {
+            isPlaybackActive = false;
+            isSessionActive = false;
+            currentPlaying = false;
             releaseLocks();
+            if (mediaSession != null) {
+                mediaSession.setActive(false);
+            }
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        String title = "IVE: Dive Archive";
-        String artist = "Playing in background";
-        if (intent != null) {
-            String t = intent.getStringExtra(EXTRA_TITLE);
-            String a = intent.getStringExtra(EXTRA_ARTIST);
-            if (t != null && !t.trim().isEmpty()) {
-                title = t.trim();
-            }
-            if (a != null && !a.trim().isEmpty()) {
-                artist = a.trim();
-            }
+        // Handle direct taps on Notification Media Action buttons
+        if (ACTION_BTN_PREV.equals(action)) {
+            dispatchToWeb("prev", 0);
+            return START_STICKY;
+        }
+        if (ACTION_BTN_TOGGLE.equals(action)) {
+            dispatchToWeb(currentPlaying ? "pause" : "play", 0);
+            return START_STICKY;
+        }
+        if (ACTION_BTN_NEXT.equals(action)) {
+            dispatchToWeb("next", 0);
+            return START_STICKY;
         }
 
-        Notification notification = buildNotification(title, artist);
+        // Otherwise update MediaSession state & Notification card
+        boolean playing = intent.getBooleanExtra(EXTRA_PLAYING, currentPlaying);
+        String title = intent.getStringExtra(EXTRA_TITLE);
+        String artist = intent.getStringExtra(EXTRA_ARTIST);
+        String album = intent.getStringExtra(EXTRA_ALBUM);
+        String artworkUrl = intent.getStringExtra(EXTRA_ARTWORK_URL);
+        long posMs = intent.getLongExtra(EXTRA_POSITION_MS, currentPositionMs);
+        long durMs = intent.getLongExtra(EXTRA_DURATION_MS, currentDurationMs);
+
+        currentPlaying = playing;
+        isPlaybackActive = playing;
+        isSessionActive = true;
+
+        if (title != null && !title.trim().isEmpty()) currentTitle = title.trim();
+        if (artist != null && !artist.trim().isEmpty()) currentArtist = artist.trim();
+        if (album != null && !album.trim().isEmpty()) currentAlbum = album.trim();
+        if (posMs >= 0) currentPositionMs = posMs;
+        if (durMs > 0) currentDurationMs = durMs;
+
+        if (mediaSession != null && !mediaSession.isActive()) {
+            mediaSession.setActive(true);
+        }
+        if (playing) {
+            acquireLocks();
+        } else {
+            releaseLocks();
+        }
+
+        // Load new album cover bitmap asynchronously when artworkUrl changes
+        if (artworkUrl != null && !artworkUrl.trim().isEmpty() && !artworkUrl.equals(currentArtworkUrl)) {
+            currentArtworkUrl = artworkUrl;
+            final String urlToFetch = artworkUrl;
+            artworkExecutor.execute(() -> {
+                Bitmap bmp = downloadBitmap(urlToFetch);
+                if (bmp != null) {
+                    mainHandler.post(() -> {
+                        if (urlToFetch.equals(currentArtworkUrl) && isSessionActive) {
+                            currentArtworkBitmap = bmp;
+                            updateSessionAndNotification();
+                        }
+                    });
+                }
+            });
+        }
+
+        updateSessionAndNotification();
+        return START_STICKY;
+    }
+
+    private void updateSessionAndNotification() {
+        if (mediaSession == null) return;
+
+        // 1. Update PlaybackState (enables Android 13-17 scrubbing bar & lockscreen buttons)
+        long actions =
+            PlaybackState.ACTION_PLAY |
+            PlaybackState.ACTION_PAUSE |
+            PlaybackState.ACTION_PLAY_PAUSE |
+            PlaybackState.ACTION_SKIP_TO_NEXT |
+            PlaybackState.ACTION_SKIP_TO_PREVIOUS |
+            PlaybackState.ACTION_SEEK_TO;
+
+        PlaybackState playbackState = new PlaybackState.Builder()
+            .setActions(actions)
+            .setState(
+                currentPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+                currentPositionMs,
+                currentPlaying ? 1.0f : 0.0f
+            )
+            .build();
+        mediaSession.setPlaybackState(playbackState);
+
+        // 2. Update MediaMetadata (Song title, artist, album, duration, and cover art)
+        MediaMetadata.Builder metaBuilder = new MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist)
+            .putString(MediaMetadata.METADATA_KEY_ALBUM, currentAlbum)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, currentDurationMs);
+
+        if (currentArtworkBitmap != null) {
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, currentArtworkBitmap);
+            metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ART, currentArtworkBitmap);
+        }
+        mediaSession.setMetadata(metaBuilder.build());
+
+        // 3. Build Notification.MediaStyle card (promotes into Android Media Panel & Vivo Origin Island!)
+        Notification notification = buildMediaStyleNotification();
+        NotificationManager nm = getSystemService(NotificationManager.class);
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
@@ -71,34 +266,107 @@ public class AudioKeepAliveService extends Service {
                 startForeground(NOTIFICATION_ID, notification);
             }
         } catch (Exception ignored) {
-            // Safeguard against Android 14+ background start restrictions
+            if (nm != null) nm.notify(NOTIFICATION_ID, notification);
         }
-
-        acquireLocks();
-        return START_STICKY;
     }
 
-    private Notification buildNotification(String title, String artist) {
+    private Notification buildMediaStyleNotification() {
         Intent openIntent = new Intent(this, MainActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        int pendingFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-            ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-            : PendingIntent.FLAG_UPDATE_CURRENT;
-        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, openIntent, pendingFlags);
+        int piFlags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
+        PendingIntent contentIntent = PendingIntent.getActivity(this, 0, openIntent, piFlags);
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
+        PendingIntent prevPending = PendingIntent.getService(
+            this,
+            101,
+            new Intent(this, AudioKeepAliveService.class).setAction(ACTION_BTN_PREV),
+            piFlags
+        );
+        PendingIntent togglePending = PendingIntent.getService(
+            this,
+            102,
+            new Intent(this, AudioKeepAliveService.class).setAction(ACTION_BTN_TOGGLE),
+            piFlags
+        );
+        PendingIntent nextPending = PendingIntent.getService(
+            this,
+            103,
+            new Intent(this, AudioKeepAliveService.class).setAction(ACTION_BTN_NEXT),
+            piFlags
+        );
+
+        Notification.Action prevAction = new Notification.Action.Builder(
+            android.R.drawable.ic_media_previous,
+            "Previous",
+            prevPending
+        ).build();
+
+        Notification.Action playPauseAction = new Notification.Action.Builder(
+            currentPlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play,
+            currentPlaying ? "Pause" : "Play",
+            togglePending
+        ).build();
+
+        Notification.Action nextAction = new Notification.Action.Builder(
+            android.R.drawable.ic_media_next,
+            "Next",
+            nextPending
+        ).build();
+
+        Notification.MediaStyle mediaStyle = new Notification.MediaStyle()
+            .setMediaSession(mediaSession.getSessionToken())
+            .setShowActionsInCompactView(0, 1, 2);
+
+        Notification.Builder builder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder = new Notification.Builder(this, CHANNEL_ID);
+        } else {
+            builder = new Notification.Builder(this);
+        }
+
+        builder
+            .setStyle(mediaStyle)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(title)
-            .setContentText(artist)
-            .setSubText("Dive Archive Audio")
-            .setOngoing(true)
-            .setSilent(true)
-            .setOnlyAlertOnce(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentTitle(currentTitle)
+            .setContentText(currentArtist)
+            .setSubText(currentAlbum)
             .setContentIntent(contentIntent)
-            .build();
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
+            .setOngoing(currentPlaying)
+            .setOnlyAlertOnce(true)
+            .addAction(prevAction)
+            .addAction(playPauseAction)
+            .addAction(nextAction);
+
+        if (currentArtworkBitmap != null) {
+            builder.setLargeIcon(currentArtworkBitmap);
+        }
+
+        return builder.build();
+    }
+
+    private Bitmap downloadBitmap(String urlStr) {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(urlStr);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            conn.setDoInput(true);
+            conn.connect();
+            try (InputStream is = conn.getInputStream()) {
+                Bitmap raw = BitmapFactory.decodeStream(is);
+                if (raw != null && (raw.getWidth() > 512 || raw.getHeight() > 512)) {
+                    return Bitmap.createScaledBitmap(raw, 512, 512, true);
+                }
+                return raw;
+            }
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
     }
 
     private void createNotificationChannel() {
@@ -107,12 +375,13 @@ public class AudioKeepAliveService extends Service {
             if (manager == null) return;
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Music Playback",
-                NotificationManager.IMPORTANCE_LOW
+                "Now Playing Media Controls",
+                NotificationManager.IMPORTANCE_DEFAULT
             );
-            channel.setDescription("Keeps IVE: Dive Archive music playing smoothly in the background");
+            channel.setDescription("Spotify-style media controls for IVE: Dive Archive");
             channel.setShowBadge(false);
             channel.setSound(null, null);
+            channel.enableVibration(false);
             manager.createNotificationChannel(channel);
         }
     }
@@ -130,7 +399,7 @@ public class AudioKeepAliveService extends Service {
                 }
             }
             if (wakeLock != null && !wakeLock.isHeld()) {
-                wakeLock.acquire(4 * 60 * 60 * 1000L); // up to 4 hours continuous session
+                wakeLock.acquire(4 * 60 * 60 * 1000L);
             }
         } catch (Exception ignored) {}
 
@@ -167,7 +436,15 @@ public class AudioKeepAliveService extends Service {
 
     @Override
     public void onDestroy() {
+        isPlaybackActive = false;
+        isSessionActive = false;
         releaseLocks();
+        if (mediaSession != null) {
+            mediaSession.setActive(false);
+            mediaSession.release();
+            mediaSession = null;
+        }
+        artworkExecutor.shutdownNow();
         super.onDestroy();
     }
 

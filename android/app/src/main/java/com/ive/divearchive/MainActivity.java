@@ -14,31 +14,51 @@ import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
-    private volatile boolean isMusicPlaying = false;
 
     public class NativeAudioBridge {
         @JavascriptInterface
-        public void setPlaybackState(boolean playing, String title, String artist) {
-            isMusicPlaying = playing;
+        public void updateMediaSession(
+            boolean playing,
+            String title,
+            String artist,
+            String album,
+            String artworkUrl,
+            double positionSeconds,
+            double durationSeconds
+        ) {
+            AudioKeepAliveService.isPlaybackActive = playing;
+            AudioKeepAliveService.isSessionActive = true;
             runOnUiThread(() -> {
                 try {
-                    Intent serviceIntent = new Intent(MainActivity.this, AudioKeepAliveService.class);
-                    if (playing) {
-                        serviceIntent.setAction(AudioKeepAliveService.ACTION_START_OR_UPDATE);
-                        serviceIntent.putExtra(AudioKeepAliveService.EXTRA_TITLE, title != null ? title : "IVE: Dive Archive");
-                        serviceIntent.putExtra(AudioKeepAliveService.EXTRA_ARTIST, artist != null ? artist : "IVE");
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            ContextCompat.startForegroundService(MainActivity.this, serviceIntent);
-                        } else {
-                            startService(serviceIntent);
-                        }
+                    Intent intent = new Intent(MainActivity.this, AudioKeepAliveService.class);
+                    intent.setAction(AudioKeepAliveService.ACTION_UPDATE_MEDIA);
+                    intent.putExtra(AudioKeepAliveService.EXTRA_PLAYING, playing);
+                    intent.putExtra(AudioKeepAliveService.EXTRA_TITLE, title != null ? title : "IVE: Dive Archive");
+                    intent.putExtra(AudioKeepAliveService.EXTRA_ARTIST, artist != null ? artist : "IVE");
+                    intent.putExtra(AudioKeepAliveService.EXTRA_ALBUM, album != null ? album : "Dive Archive");
+                    intent.putExtra(AudioKeepAliveService.EXTRA_ARTWORK_URL, artworkUrl != null ? artworkUrl : "");
+                    intent.putExtra(AudioKeepAliveService.EXTRA_POSITION_MS, Math.max(0L, Math.round(positionSeconds * 1000.0)));
+                    intent.putExtra(AudioKeepAliveService.EXTRA_DURATION_MS, Math.max(1000L, Math.round(durationSeconds * 1000.0)));
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        ContextCompat.startForegroundService(MainActivity.this, intent);
                     } else {
-                        serviceIntent.setAction(AudioKeepAliveService.ACTION_STOP);
-                        startService(serviceIntent);
+                        startService(intent);
                     }
-                } catch (Exception ignored) {
-                    // Ignore if OS blocks background service transition
-                }
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void stopMediaSession() {
+            AudioKeepAliveService.isPlaybackActive = false;
+            AudioKeepAliveService.isSessionActive = false;
+            runOnUiThread(() -> {
+                try {
+                    Intent stopIntent = new Intent(MainActivity.this, AudioKeepAliveService.class);
+                    stopIntent.setAction(AudioKeepAliveService.ACTION_STOP_SERVICE);
+                    startService(stopIntent);
+                } catch (Exception ignored) {}
             });
         }
     }
@@ -47,7 +67,6 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Request notification permission on Android 13+ so the Now Playing media service notification displays cleanly
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -59,13 +78,22 @@ public class MainActivity extends BridgeActivity {
             }
         }
 
+        // Route hardware / notification / lockscreen / Dynamic Island media buttons back into React player.tsx
+        AudioKeepAliveService.setMediaCommandListener((command, seekSeconds) -> {
+            runOnUiThread(() -> {
+                if (getBridge() != null && getBridge().getWebView() != null) {
+                    String js = "window.__iveNativeMediaCommand && window.__iveNativeMediaCommand('"
+                        + command + "', " + seekSeconds + ");";
+                    getBridge().getWebView().evaluateJavascript(js, null);
+                }
+            });
+        });
+
         if (getBridge() != null && getBridge().getWebView() != null) {
             WebView webView = getBridge().getWebView();
             WebSettings settings = webView.getSettings();
-            // Allow instant audio playback without gesture-gate lag
             settings.setMediaPlaybackRequiresUserGesture(false);
 
-            // Expose native foreground audio service controller to player.tsx
             webView.addJavascriptInterface(new NativeAudioBridge(), "IveNativeAudio");
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -80,19 +108,17 @@ public class MainActivity extends BridgeActivity {
     private void keepWebViewAudioAwake() {
         if (getBridge() != null && getBridge().getWebView() != null) {
             WebView webView = getBridge().getWebView();
-            // Capacitor's BridgeActivity pauses the WebView in super.onPause();
-            // immediately resume WebView & JS timers + dispatch visibility override so YouTube & <audio> never stop!
             webView.onResume();
             webView.resumeTimers();
-            if (isMusicPlaying) {
+            if (AudioKeepAliveService.isSessionActive) {
                 webView.postDelayed(() -> {
                     webView.onResume();
                     webView.resumeTimers();
-                }, 120);
+                }, 100);
                 webView.postDelayed(() -> {
                     webView.onResume();
                     webView.resumeTimers();
-                }, 450);
+                }, 400);
             }
         }
     }
@@ -111,9 +137,10 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        AudioKeepAliveService.setMediaCommandListener(null);
         try {
             Intent stopIntent = new Intent(this, AudioKeepAliveService.class);
-            stopIntent.setAction(AudioKeepAliveService.ACTION_STOP);
+            stopIntent.setAction(AudioKeepAliveService.ACTION_STOP_SERVICE);
             startService(stopIntent);
         } catch (Exception ignored) {}
         super.onDestroy();
