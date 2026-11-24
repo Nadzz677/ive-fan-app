@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   AlertCircle,
   CheckCircle2,
   ChevronRight,
@@ -11,16 +10,18 @@ import {
   Eye,
   FileText,
   FolderKanban,
-  Layers,
+  LayoutDashboard,
   ListMusic,
   Lock,
   LogOut,
+  Menu,
   Moon,
   Newspaper,
   Play,
   Plus,
   Rocket,
   RotateCcw,
+  Search,
   ShieldCheck,
   Sparkles,
   Star,
@@ -32,6 +33,8 @@ import {
   Volume2,
   X,
 } from "lucide-react";
+import { AdminDashboardOverview } from "@/components/admin/AdminDashboardOverview";
+import { getAdminTheme } from "@/components/admin/apex-theme";
 import { useAuth } from "@/lib/auth";
 import {
   isItunesPreviewUrl,
@@ -58,7 +61,7 @@ import { ArtworkImage } from "@/components/ArtworkImage";
 import { cn } from "@/lib/utils";
 import type { Album, AlbumType, Member, NewsItem, Track, TrackLanguage } from "@/types";
 
-type AdminTab = "albums" | "tracks" | "members" | "news" | "seed";
+type AdminTab = "dashboard" | "albums" | "tracks" | "members" | "news" | "seed";
 type AdminColorMode = "dark" | "light";
 
 const ADMIN_THEME_KEY = "ive-dive-archive:admin-theme";
@@ -103,9 +106,11 @@ export function AdminStudioView() {
   const { changes, pendingCount } = useStagedCatalog();
   const queryClient = useQueryClient();
 
-  const [tab, setTab] = useState<AdminTab>("albums");
+  const [tab, setTab] = useState<AdminTab>("dashboard");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
 
   // Admin Light / Dark theme state (persisted in localStorage)
   const [colorMode, setColorMode] = useState<AdminColorMode>(() => {
@@ -522,43 +527,28 @@ export function AdminStudioView() {
     }
   };
 
-  // Dynamic Light / Dark Enterprise SaaS Palette Tokens
-  const shellBg = isLight ? "bg-slate-50 text-slate-900" : "bg-[#090b10] text-slate-100";
-  const chromeBg = isLight
-    ? "bg-white border-slate-200/90"
-    : "bg-[#0d1017] border-slate-800/80";
-  const chromeHeaderBg = isLight
-    ? "bg-white/95 border-slate-200/90"
-    : "bg-[#0d1017]/95 border-slate-800/80";
-  const panelBg = isLight
-    ? "bg-white border-slate-200/90 shadow-xs"
-    : "bg-[#11151f] border-slate-800/90";
-  const subPanelBg = isLight
-    ? "bg-slate-50 border-slate-200"
-    : "bg-[#0b0d13] border-slate-800";
-  const dividerClass = isLight ? "divide-slate-200/80" : "divide-slate-800/70";
-  const borderClass = isLight ? "border-slate-200" : "border-slate-800";
-  const headingText = isLight ? "text-slate-900" : "text-white";
-  const subText = isLight ? "text-slate-500" : "text-slate-400";
-  const mutedMonoText = isLight ? "text-slate-400" : "text-slate-500";
-  const rowHover = isLight ? "hover:bg-slate-50" : "hover:bg-slate-800/35";
-  const secondaryBtn = isLight
-    ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-300"
-    : "border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-700";
+  // Apex Royal Indigo-Navy & Pink-Rose Palette Tokens (Dark & Light)
+  const theme = getAdminTheme(isLight);
+  const {
+    shellBg,
+    chromeBg,
+    chromeHeaderBg,
+    panelBg,
+    subPanelBg,
+    dividerClass,
+    borderClass,
+    headingText,
+    subText,
+    mutedMonoText,
+    rowHover,
+    secondaryBtn,
+    primaryBtn,
+    activeRowBg,
+    badgeNeutral,
+    inputClass,
+    labelClass,
+  } = theme;
 
-  const inputClass = cn(
-    "w-full rounded-lg border px-3 py-2 text-xs outline-none transition-colors focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30",
-    isLight
-      ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
-      : "border-slate-800 bg-[#0b0d13] text-slate-100 placeholder:text-slate-500",
-  );
-  const labelClass = cn(
-    "mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-wider",
-    isLight ? "text-slate-500" : "text-slate-400",
-  );
-
-  const activeFeaturedAlbum = albums.find((a) => a.id === config.featuredAlbumId) ?? albums[0];
-  const activeFeaturedTrack = tracks.find((t) => t.id === config.featuredTrackId) ?? tracks[0];
   const currentAlbumForTracks = albums.find((a) => a.id === selectedAlbumId) ?? albums[0];
   const baseDisplayedTracks =
     trackViewFilter === "ALL" ? tracks : getAlbumTracks(trackViewFilter);
@@ -588,53 +578,184 @@ export function AdminStudioView() {
   const navItems: {
     id: AdminTab;
     label: string;
+    subtitle: string;
     group: "CONTENT" | "SYSTEM";
     count?: number;
     icon: typeof Disc3;
   }[] = [
-    { id: "albums", label: "Discography Albums", group: "CONTENT", count: albums.length, icon: Disc3 },
-    { id: "tracks", label: "Songs & Audio", group: "CONTENT", count: tracks.length, icon: ListMusic },
-    { id: "members", label: "Member Dossiers", group: "CONTENT", count: members.length, icon: Users },
-    { id: "news", label: "News Dispatches", group: "CONTENT", count: news.length, icon: Newspaper },
-    { id: "seed", label: "Database & Seeding", group: "SYSTEM", icon: Database },
+    {
+      id: "dashboard",
+      label: "Dashboard",
+      subtitle:
+        "A collection of analytics showing your catalog, audio streams, and Firestore sync data.",
+      group: "CONTENT",
+      icon: LayoutDashboard,
+    },
+    {
+      id: "albums",
+      label: "Discography Albums",
+      subtitle: "Manage era releases, cover artwork, release dates, and Featured Era spotlight.",
+      group: "CONTENT",
+      count: albums.length,
+      icon: Disc3,
+    },
+    {
+      id: "tracks",
+      label: "Songs & Audio",
+      subtitle:
+        "Upload full-length .MP3/.M4A tracks, link direct cloud or YouTube audio, and sync lyrics.",
+      group: "CONTENT",
+      count: tracks.length,
+      icon: ListMusic,
+    },
+    {
+      id: "members",
+      label: "Member Dossiers",
+      subtitle: "Edit official member profiles, photocards, biographies, and archive facts.",
+      group: "CONTENT",
+      count: members.length,
+      icon: Users,
+    },
+    {
+      id: "news",
+      label: "News Dispatches",
+      subtitle: "Publish comeback announcements, tour schedules, and editorial updates.",
+      group: "CONTENT",
+      count: news.length,
+      icon: Newspaper,
+    },
+    {
+      id: "seed",
+      label: "Database & Seeding",
+      subtitle: "Synchronize baseline catalog collections and inspect Cloud Firestore status.",
+      group: "SYSTEM",
+      icon: Database,
+    },
   ];
 
   const activeNavMeta = navItems.find((item) => item.id === tab) ?? navItems[0]!;
 
+  // Global top-bar search across Albums, Songs, Members, and News
+  const globalSearchResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return [];
+    const results: {
+      key: string;
+      kind: "Album" | "Song" | "Member" | "News";
+      title: string;
+      sub: string;
+      onSelect: () => void;
+    }[] = [];
+
+    for (const a of albums) {
+      if (a.title.toLowerCase().includes(q) || a.id.toLowerCase().includes(q)) {
+        results.push({
+          key: `album-${a.id}`,
+          kind: "Album",
+          title: a.title,
+          sub: `${a.type} · ${a.releaseDate}`,
+          onSelect: () => {
+            loadAlbumIntoForm(a);
+            setTab("albums");
+            setGlobalSearch("");
+          },
+        });
+      }
+      if (results.length >= 8) return results;
+    }
+
+    for (const t of tracks) {
+      if (t.title.toLowerCase().includes(q) || t.id.toLowerCase().includes(q)) {
+        const albumTitle = albums.find((a) => a.id === t.albumId)?.title ?? t.albumId;
+        results.push({
+          key: `track-${t.id}`,
+          kind: "Song",
+          title: t.title,
+          sub: `${albumTitle} · ${formatDurationMmSs(t.duration)}`,
+          onSelect: () => {
+            loadTrackIntoForm(t);
+            setTab("tracks");
+            setGlobalSearch("");
+          },
+        });
+      }
+      if (results.length >= 8) return results;
+    }
+
+    for (const m of members) {
+      if (
+        m.name.toLowerCase().includes(q) ||
+        m.koreanName.toLowerCase().includes(q) ||
+        m.position.toLowerCase().includes(q)
+      ) {
+        results.push({
+          key: `member-${m.id}`,
+          kind: "Member",
+          title: `${m.name} (${m.koreanName})`,
+          sub: m.position,
+          onSelect: () => {
+            setSelectedMemberId(m.id);
+            setTab("members");
+            setGlobalSearch("");
+          },
+        });
+      }
+      if (results.length >= 8) return results;
+    }
+
+    for (const n of news) {
+      if (n.title.toLowerCase().includes(q) || n.category.toLowerCase().includes(q)) {
+        results.push({
+          key: `news-${n.id}`,
+          kind: "News",
+          title: n.title,
+          sub: `${n.category} · ${n.date}`,
+          onSelect: () => {
+            loadNewsIntoForm(n);
+            setTab("news");
+            setGlobalSearch("");
+          },
+        });
+      }
+      if (results.length >= 8) return results;
+    }
+
+    return results;
+  }, [globalSearch, albums, tracks, members, news]);
+
+  const adminDisplayName = email ? email.split("@")[0] : "Daniel Carney";
+  const adminInitials = (adminDisplayName || "DA").slice(0, 2).toUpperCase();
+
   // ---------------------------------------------------------------------------
-  // 1. UNAUTHENTICATED VIEW: Enterprise Admin Sign-In Gate
+  // 1. UNAUTHENTICATED VIEW: Apex Admin Sign-In Gate
   // ---------------------------------------------------------------------------
   if (!isAdmin) {
     return (
       <div
         className={cn(
-          "flex min-h-screen flex-col justify-between transition-colors selection:bg-indigo-500 selection:text-white",
+          "flex min-h-screen flex-col justify-between transition-colors selection:bg-[#ff3565] selection:text-white",
           shellBg,
         )}
       >
         {/* Top System Bar */}
         <header className={cn("flex items-center justify-between border-b px-6 py-3.5", chromeBg)}>
           <div className="flex items-center gap-3">
-            <div className="grid h-8 w-8 place-items-center rounded-lg bg-indigo-600 text-white shadow-sm">
-              <Layers size={16} />
+            {/* Apex 3D Pink Triangle Prism Logo */}
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-[0_6px_16px_-3px_rgba(255,45,104,0.6)]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L2 20h20L12 2zm0 5.8L17.6 18H6.4L12 7.8z" />
+              </svg>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className={cn("text-sm font-semibold tracking-tight", headingText)}>
-                  Dive Archive CMS
+                <span className={cn("text-base font-bold tracking-tight", headingText)}>
+                  Dive Archive
                 </span>
-                <span
-                  className={cn(
-                    "rounded border px-1.5 py-0.5 font-mono text-[10px] font-medium",
-                    isLight
-                      ? "border-slate-200 bg-slate-100 text-slate-600"
-                      : "border-slate-700 bg-slate-800/90 text-slate-300",
-                  )}
-                >
-                  v5.5 · ADMIN
+                <span className="rounded bg-[#ff3565]/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#ff3565]">
+                  APEX CMS
                 </span>
               </div>
-              <p className={cn("font-mono text-[10px]", subText)}>
+              <p className={cn("text-[11px]", subText)}>
                 Firestore Content Management &amp; Live Audio Sync Console
               </p>
             </div>
@@ -652,11 +773,11 @@ export function AdminStudioView() {
             >
               {isLight ? (
                 <>
-                  <Moon size={14} className="text-indigo-600" /> Dark
+                  <Moon size={14} className="text-[#ff3565]" /> Dark
                 </>
               ) : (
                 <>
-                  <Sun size={14} className="text-amber-400" /> Light
+                  <Sun size={14} className="text-[#f5c43d]" /> Light
                 </>
               )}
             </button>
@@ -669,7 +790,7 @@ export function AdminStudioView() {
                 secondaryBtn,
               )}
             >
-              <Eye size={14} className="text-indigo-500" />
+              <Eye size={14} className="text-[#1992ff]" />
               Preview Fan App
             </button>
           </div>
@@ -677,17 +798,17 @@ export function AdminStudioView() {
 
         {/* Center Sign-In Card */}
         <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
-          <div className={cn("rounded-xl border p-7 shadow-xl", panelBg)}>
+          <div className={cn("rounded-xl border p-7", panelBg)}>
             <div className={cn("mb-6 flex items-center justify-between border-b pb-4", borderClass)}>
               <div className="flex items-center gap-2.5">
-                <div className="grid h-9 w-9 place-items-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-500">
+                <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-md">
                   <Lock size={16} />
                 </div>
                 <div>
                   <h1 className={cn("text-base font-semibold", headingText)}>
                     Administrator Sign-In
                   </h1>
-                  <p className={cn("font-mono text-[11px]", subText)}>
+                  <p className={cn("text-[11px]", subText)}>
                     Project: ive-dive-archive
                   </p>
                 </div>
@@ -696,14 +817,14 @@ export function AdminStudioView() {
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-medium",
                   isCloudEnabled
-                    ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
-                    : "border border-amber-500/30 bg-amber-500/10 text-amber-500",
+                    ? "border border-[#13c276]/30 bg-[#13c276]/15 text-[#13c276]"
+                    : "border border-[#f5c43d]/30 bg-[#f5c43d]/15 text-[#f5c43d]",
                 )}
               >
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    isCloudEnabled ? "bg-emerald-500" : "bg-amber-500",
+                    isCloudEnabled ? "bg-[#13c276]" : "bg-[#f5c43d]",
                   )}
                 />
                 {isCloudEnabled ? "FIRESTORE ONLINE" : "CONNECTING"}
@@ -711,7 +832,7 @@ export function AdminStudioView() {
             </div>
 
             {!isCloudEnabled ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-600 dark:text-amber-300">
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-500">
                 Connecting to Firebase project... Verify that <code>.env</code> contains your
                 <code>VITE_FIREBASE_*</code> credentials.
               </div>
@@ -741,7 +862,7 @@ export function AdminStudioView() {
                 </div>
 
                 {loginError && (
-                  <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-500">
+                  <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400">
                     <AlertCircle size={14} className="mt-0.5 shrink-0" />
                     <span>{loginError}</span>
                   </div>
@@ -750,7 +871,10 @@ export function AdminStudioView() {
                 <button
                   type="submit"
                   disabled={busy}
-                  className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                  className={cn(
+                    "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
+                    primaryBtn,
+                  )}
                 >
                   <ShieldCheck size={15} />
                   {busy ? "Authenticating..." : "Authenticate & Open Console"}
@@ -774,170 +898,256 @@ export function AdminStudioView() {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. AUTHENTICATED VIEW: Full SaaS CMS Workspace (Light & Dark Mode)
+  // 2. AUTHENTICATED VIEW: Full Apex Analytics & CMS Workspace
   // ---------------------------------------------------------------------------
   return (
     <div
       className={cn(
-        "flex min-h-screen font-sans transition-colors selection:bg-indigo-500 selection:text-white",
+        "flex min-h-screen flex-col font-sans transition-colors selection:bg-[#ff3565] selection:text-white",
         shellBg,
       )}
     >
-      {/* LEFT PERSISTENT SIDEBAR */}
-      <aside
+      {/* FULL-WIDTH TOP APEX NAVBAR (Logo + Pink Menu Toggle + Global Search + Badges + Avatar) */}
+      <header
         className={cn(
-          "sticky top-0 flex h-screen w-64 shrink-0 flex-col justify-between border-r",
-          chromeBg,
+          "sticky top-0 z-40 flex h-16 w-full items-center justify-between gap-4 border-b px-5 backdrop-blur-md",
+          chromeHeaderBg,
         )}
       >
-        <div>
-          {/* Brand Header */}
-          <div className={cn("flex items-center gap-3 border-b px-5 py-4", borderClass)}>
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-600 text-white shadow-sm">
-              <Layers size={16} />
+        {/* Left: Apex Brand + Pink Hamburger Collapse Button + Search Bar */}
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => setTab("dashboard")}
+            className="flex items-center gap-2.5 pr-2 text-left"
+          >
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-[0_6px_16px_-3px_rgba(255,45,104,0.65)]">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L2 20h20L12 2zm0 5.8L17.6 18H6.4L12 7.8z" />
+              </svg>
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className={cn("truncate text-sm font-semibold", headingText)}>Dive Archive</p>
-                <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-indigo-500">
-                  CMS
+            {!sidebarCollapsed && (
+              <div className="hidden sm:block">
+                <span className={cn("text-lg font-bold tracking-tight", headingText)}>
+                  Dive<span className="text-[#ff3565]">.</span>Archive
                 </span>
               </div>
-              <p className={cn("truncate font-mono text-[10px]", subText)}>
-                Production Firestore
-              </p>
+            )}
+          </button>
+
+          {/* Pink Rounded Square Menu Toggle (matches Apex pink ☰ button) */}
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((prev) => !prev)}
+            title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            className={cn(
+              "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-transform active:scale-95",
+              primaryBtn,
+            )}
+          >
+            <Menu size={16} />
+          </button>
+
+          {/* Global Search Input with Live Dropdown */}
+          <div className="relative hidden md:block">
+            <div
+              className={cn(
+                "flex w-64 items-center gap-2 rounded-md border px-3 py-1.5 lg:w-72",
+                isLight
+                  ? "border-[#d5dcf4] bg-[#f4f6fd]"
+                  : "border-[#2c3778] bg-[#161c42]",
+              )}
+            >
+              <Search size={14} className={subText} />
+              <input
+                type="text"
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                placeholder="Search albums, songs, members..."
+                className={cn(
+                  "w-full bg-transparent text-xs outline-none",
+                  headingText,
+                  isLight ? "placeholder:text-[#8992c2]" : "placeholder:text-[#6f7bb6]",
+                )}
+              />
+              {globalSearch && (
+                <button
+                  type="button"
+                  onClick={() => setGlobalSearch("")}
+                  className={subText}
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
-          </div>
 
-          {/* Navigation Groups */}
-          <div className="px-3 py-4">
-            <p className={cn("px-2.5 pb-2 font-mono text-[10px] font-semibold uppercase tracking-wider", mutedMonoText)}>
-              Content Collections
-            </p>
-            <nav className="space-y-1">
-              {navItems
-                .filter((i) => i.group === "CONTENT")
-                .map(({ id, label, count, icon: Icon }) => {
-                  const active = tab === id;
-                  return (
+            {globalSearchResults.length > 0 && (
+              <div
+                className={cn(
+                  "absolute top-full left-0 z-50 mt-1.5 w-80 overflow-hidden rounded-lg border shadow-2xl",
+                  panelBg,
+                )}
+              >
+                <div className={cn("divide-y", dividerClass)}>
+                  {globalSearchResults.map((res) => (
                     <button
-                      key={id}
+                      key={res.key}
                       type="button"
-                      onClick={() => setTab(id)}
+                      onClick={res.onSelect}
                       className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
-                        active
-                          ? isLight
-                            ? "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200"
-                            : "bg-indigo-600/15 text-indigo-300 ring-1 ring-inset ring-indigo-500/30"
-                          : isLight
-                            ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
+                        "flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left text-xs transition-colors",
+                        rowHover,
                       )}
                     >
-                      <span className="flex items-center gap-2.5">
-                        <Icon
-                          size={15}
-                          className={
-                            active
-                              ? isLight
-                                ? "text-indigo-600"
-                                : "text-indigo-400"
-                              : "text-slate-400"
-                          }
-                        />
-                        {label}
-                      </span>
-                      {typeof count === "number" && (
-                        <span
-                          className={cn(
-                            "rounded px-1.5 py-0.5 font-mono text-[10px]",
-                            active
-                              ? isLight
-                                ? "bg-indigo-100 text-indigo-700"
-                                : "bg-indigo-500/20 text-indigo-200"
-                              : isLight
-                                ? "bg-slate-100 text-slate-600"
-                                : "bg-slate-800 text-slate-400",
-                          )}
-                        >
-                          {count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-            </nav>
-
-            <p className={cn("mt-6 px-2.5 pb-2 font-mono text-[10px] font-semibold uppercase tracking-wider", mutedMonoText)}>
-              System Operations
-            </p>
-            <nav className="space-y-1">
-              {navItems
-                .filter((i) => i.group === "SYSTEM")
-                .map(({ id, label, icon: Icon }) => {
-                  const active = tab === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setTab(id)}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-colors",
-                        active
-                          ? isLight
-                            ? "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200"
-                            : "bg-indigo-600/15 text-indigo-300 ring-1 ring-inset ring-indigo-500/30"
-                          : isLight
-                            ? "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                            : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200",
-                      )}
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <Icon
-                          size={15}
-                          className={
-                            active
-                              ? isLight
-                                ? "text-indigo-600"
-                                : "text-indigo-400"
-                              : "text-slate-400"
-                          }
-                        />
-                        {label}
+                      <div className="min-w-0">
+                        <p className={cn("truncate font-semibold", headingText)}>
+                          {res.title}
+                        </p>
+                        <p className={cn("truncate text-[10px]", subText)}>{res.sub}</p>
+                      </div>
+                      <span className="shrink-0 rounded bg-[#ff3565]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[#ff3565]">
+                        {res.kind}
                       </span>
                     </button>
-                  );
-                })}
-            </nav>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Bottom Admin Session Footer */}
-        <div
-          className={cn(
-            "border-t p-3.5",
-            isLight ? "border-slate-200 bg-slate-50/80" : "border-slate-800/80 bg-[#0a0c12]",
+        {/* Right: Apex Circular Badge Icons + Push Live + Admin Profile Avatar */}
+        <div className="flex items-center gap-2.5">
+          {/* Light / Dark Mode Circular Button */}
+          <button
+            type="button"
+            onClick={toggleColorMode}
+            title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
+            className={cn(
+              "relative grid h-9 w-9 place-items-center rounded-full border transition-colors",
+              secondaryBtn,
+            )}
+          >
+            {isLight ? (
+              <Moon size={15} className="text-[#ff3565]" />
+            ) : (
+              <Sun size={15} className="text-[#f5c43d]" />
+            )}
+          </button>
+
+          {/* Audio Linked Count Circular Badge (matches Apex green badge icon) */}
+          <button
+            type="button"
+            onClick={() => setTab("tracks")}
+            title={`${tracksWithAudioCount} songs linked with audio`}
+            className={cn(
+              "relative grid h-9 w-9 place-items-center rounded-full border transition-colors",
+              secondaryBtn,
+            )}
+          >
+            <Volume2 size={15} />
+            <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#13c276] px-1 text-[9px] font-bold text-white shadow-xs">
+              {tracksWithAudioCount}
+            </span>
+          </button>
+
+          {/* Staged Changes Circular Badge (matches Apex pink badge icon) */}
+          <button
+            type="button"
+            onClick={() => {
+              if (pendingCount > 0) {
+                void handlePushLive();
+              } else {
+                setTab("seed");
+              }
+            }}
+            title={
+              pendingCount > 0
+                ? `${pendingCount} staged changes ready to push live`
+                : "0 staged changes"
+            }
+            className={cn(
+              "relative grid h-9 w-9 place-items-center rounded-full border transition-colors",
+              secondaryBtn,
+            )}
+          >
+            <Rocket size={15} />
+            <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#ff3565] px-1 text-[9px] font-bold text-white shadow-xs">
+              {pendingCount}
+            </span>
+          </button>
+
+          {/* Preview Fan App Button */}
+          <button
+            type="button"
+            onClick={() => setPreviewingFanApp(true)}
+            className={cn(
+              "hidden items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:inline-flex",
+              secondaryBtn,
+            )}
+          >
+            <Eye size={14} className="text-[#1992ff]" />
+            <span>Preview App</span>
+          </button>
+
+          {/* Discard All Staged Button */}
+          {pendingCount > 0 && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={clearAllStagedChanges}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors hover:border-[#ff3565] hover:text-[#ff3565]",
+                secondaryBtn,
+              )}
+            >
+              <RotateCcw size={13} />
+              <span className="hidden lg:inline">Discard ({pendingCount})</span>
+            </button>
           )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                <p className={cn("truncate text-xs font-medium", headingText)}>
-                  {email || "Administrator"}
-                </p>
-              </div>
-              <p className={cn("mt-0.5 font-mono text-[10px]", mutedMonoText)}>
-                Role: Super Admin
+
+          {/* Primary Push Live Button */}
+          <button
+            type="button"
+            disabled={busy || pendingCount === 0}
+            onClick={() => void handlePushLive()}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all",
+              pendingCount > 0
+                ? primaryBtn
+                : isLight
+                  ? "cursor-not-allowed border border-[#dce2f7] bg-[#f4f6fd] text-[#9aa5d9]"
+                  : "cursor-not-allowed border border-[#2c3778] bg-[#181f4a] text-[#6f7bb6]",
+            )}
+          >
+            <Rocket size={13} />
+            <span>
+              {busy ? "Deploying..." : `Push Live (${pendingCount})`}
+            </span>
+          </button>
+
+          {/* Admin Avatar + Name + Role + Sign Out (matches Apex top-right profile chip) */}
+          <div
+            className={cn(
+              "ml-1 flex items-center gap-2.5 border-l pl-3",
+              borderClass,
+            )}
+          >
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#ff3d71] to-[#a845ff] text-xs font-bold text-white shadow-sm ring-2 ring-[#ff3565]/40">
+              {adminInitials}
+            </div>
+            <div className="hidden text-left xl:block">
+              <p className={cn("max-w-[120px] truncate text-xs font-semibold", headingText)}>
+                {adminDisplayName}
               </p>
+              <p className={cn("text-[10px]", subText)}>Admin</p>
             </div>
             <button
               type="button"
               onClick={() => void signOutAdmin()}
               title="Sign out of Admin CMS"
               className={cn(
-                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-colors",
+                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors hover:border-[#ff3565] hover:text-[#ff3565]",
                 secondaryBtn,
               )}
             >
@@ -945,186 +1155,115 @@ export function AdminStudioView() {
             </button>
           </div>
         </div>
-      </aside>
+      </header>
 
-      {/* MAIN CONTENT SHELL */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* TOP COMMAND & DEPLOYMENT HEADER */}
-        <header
+      {/* BODY BELOW TOP NAVBAR: COLLAPSIBLE LEFT SIDEBAR + MAIN WORKSPACE */}
+      <div className="flex min-h-[calc(100vh-4rem)] flex-1">
+        {/* LEFT PERSISTENT APEX SIDEBAR */}
+        <aside
           className={cn(
-            "sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3.5 backdrop-blur-md",
-            chromeHeaderBg,
+            "sticky top-16 flex h-[calc(100vh-4rem)] shrink-0 flex-col justify-between border-r transition-all duration-200",
+            chromeBg,
+            sidebarCollapsed ? "w-[74px]" : "w-60",
           )}
         >
-          <div className="flex items-center gap-2 text-xs">
-            <span className={cn("font-mono", mutedMonoText)}>CMS</span>
-            <ChevronRight size={13} className={mutedMonoText} />
-            <span className={cn("font-mono", subText)}>{activeNavMeta.group}</span>
-            <ChevronRight size={13} className={mutedMonoText} />
-            <span className={cn("font-semibold", headingText)}>{activeNavMeta.label}</span>
+          <div className="overflow-y-auto px-2.5 py-4">
+            <nav className="space-y-1.5">
+              {navItems.map(({ id, label, count, icon: Icon }) => {
+                const active = tab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTab(id)}
+                    title={label}
+                    className={cn(
+                      "group flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-all",
+                      active
+                        ? isLight
+                          ? "bg-[#eef1fb] text-[#1e2554] font-semibold"
+                          : "bg-[#26306e] text-white font-semibold"
+                        : isLight
+                          ? "text-[#5e689e] hover:bg-[#f4f6fd] hover:text-[#1e2554]"
+                          : "text-[#a6b0e3] hover:bg-[#232d66]/70 hover:text-white",
+                    )}
+                  >
+                    <span className="flex items-center gap-3">
+                      {/* Apex signature: Active item gets glowing pink-rose gradient square icon chip! */}
+                      <span
+                        className={cn(
+                          "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all",
+                          active
+                            ? "bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-[0_4px_14px_rgba(255,53,101,0.55)]"
+                            : isLight
+                              ? "text-[#5e689e] group-hover:text-[#1e2554]"
+                              : "text-[#8d97cc] group-hover:text-white",
+                        )}
+                      >
+                        <Icon size={16} />
+                      </span>
+                      {!sidebarCollapsed && <span className="truncate">{label}</span>}
+                    </span>
+
+                    {!sidebarCollapsed && (
+                      <span className="flex items-center gap-1.5">
+                        {typeof count === "number" && (
+                          <span
+                            className={cn(
+                              "rounded px-1.5 py-0.5 font-mono text-[10px]",
+                              active
+                                ? "bg-[#ff3565]/20 text-[#ff3565]"
+                                : badgeNeutral,
+                            )}
+                          >
+                            {count}
+                          </span>
+                        )}
+                        <ChevronRight
+                          size={13}
+                          className={cn(
+                            "transition-transform",
+                            active
+                              ? "translate-x-0.5 text-[#ff3565]"
+                              : mutedMonoText,
+                          )}
+                        />
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            {/* Light / Dark Theme Switch */}
-            <button
-              type="button"
-              onClick={toggleColorMode}
-              title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
-                secondaryBtn,
-              )}
-            >
-              {isLight ? (
-                <>
-                  <Moon size={14} className="text-indigo-600" />
-                  <span>Dark Mode</span>
-                </>
-              ) : (
-                <>
-                  <Sun size={14} className="text-amber-400" />
-                  <span>Light Mode</span>
-                </>
-              )}
-            </button>
-
-            {/* Live Preview Toggle */}
-            <button
-              type="button"
-              onClick={() => setPreviewingFanApp(true)}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-xs font-medium transition-colors",
-                secondaryBtn,
-              )}
-            >
-              <Eye size={14} className="text-indigo-500" />
-              Preview Fan App
-              {pendingCount > 0 && (
-                <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-600 dark:text-amber-300">
-                  {pendingCount} draft
-                </span>
-              )}
-            </button>
-
-            {/* Discard All Staged Button */}
-            {pendingCount > 0 && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={clearAllStagedChanges}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors hover:border-rose-500/50 hover:text-rose-500",
-                  secondaryBtn,
-                )}
-              >
-                <RotateCcw size={13} />
-                Discard ({pendingCount})
-              </button>
-            )}
-
-            {/* Primary Deployment Button */}
-            <button
-              type="button"
-              disabled={busy || pendingCount === 0}
-              onClick={() => void handlePushLive()}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-all",
-                pendingCount > 0
-                  ? "bg-emerald-600 text-white shadow-md hover:bg-emerald-500"
-                  : isLight
-                    ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
-                    : "cursor-not-allowed border border-slate-800 bg-slate-900 text-slate-500",
-              )}
-            >
-              <Rocket size={14} />
-              {busy ? "Deploying to Firestore..." : `Push Live Changes (${pendingCount})`}
-            </button>
-          </div>
-        </header>
-
-        {/* WORKSPACE BODY */}
-        <main className="mx-auto w-full max-w-[1440px] flex-1 space-y-6 p-6">
-          {/* KPI OVERVIEW STRIP */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className={cn("rounded-xl border p-4", panelBg)}>
-              <div className="flex items-center justify-between">
-                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
-                  Discography Catalog
-                </span>
-                <Disc3 size={15} className="text-indigo-500" />
+          {/* Sidebar Bottom Firestore Live Status Footer */}
+          {!sidebarCollapsed && (
+            <div className={cn("border-t p-3.5", borderClass)}>
+              <div className={cn("rounded-lg border p-2.5", subPanelBg)}>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-[#13c276]" />
+                  <span className={cn("text-[11px] font-semibold", headingText)}>
+                    Firestore Production
+                  </span>
+                </div>
+                <p className={cn("mt-0.5 text-[10px]", subText)}>
+                  {albums.length} albums · {tracks.length} songs synced
+                </p>
               </div>
-              <p className={cn("mt-2 text-2xl font-bold tracking-tight", headingText)}>
-                {albums.length}{" "}
-                <span className={cn("text-xs font-normal", subText)}>releases</span>
-              </p>
-              <p className={cn("mt-1 font-mono text-[11px]", mutedMonoText)}>
-                {news.length} news dispatches · {members.length} members
-              </p>
             </div>
+          )}
+        </aside>
 
-            <div className={cn("rounded-xl border p-4", panelBg)}>
-              <div className="flex items-center justify-between">
-                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
-                  Audio &amp; YouTube Index
-                </span>
-                <Volume2 size={15} className="text-indigo-500" />
-              </div>
-              <p className={cn("mt-2 text-2xl font-bold tracking-tight", headingText)}>
-                {tracks.length} <span className={cn("text-xs font-normal", subText)}>tracks</span>
-              </p>
-              <p className={cn("mt-1 font-mono text-[11px]", mutedMonoText)}>
-                {tracksWithAudioCount} with YouTube audio ·{" "}
-                {tracks.filter((t) => t.lyricsAvailable).length} with lyrics
-              </p>
-            </div>
-
-            <div className={cn("rounded-xl border p-4", panelBg)}>
-              <div className="flex items-center justify-between">
-                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
-                  Active Featured Spotlight
-                </span>
-                <Star size={15} className="text-amber-500" />
-              </div>
-              <p className={cn("mt-2 truncate text-base font-semibold", headingText)}>
-                {activeFeaturedAlbum?.title ?? "None"}
-              </p>
-              <p className="mt-1 truncate font-mono text-[11px] text-indigo-500">
-                Song: {activeFeaturedTrack?.title ?? "None"}
-              </p>
-            </div>
-
-            <div
-              className={cn(
-                "rounded-xl border p-4 transition-colors",
-                pendingCount > 0
-                  ? "border-amber-500/40 bg-amber-500/10"
-                  : panelBg,
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={cn(
-                    "font-mono text-[10px] font-semibold uppercase tracking-wider",
-                    pendingCount > 0 ? "text-amber-600 dark:text-amber-300" : subText,
-                  )}
-                >
-                  Staged Deployment Queue
-                </span>
-                <Activity
-                  size={15}
-                  className={pendingCount > 0 ? "text-amber-500" : "text-emerald-500"}
-                />
-              </div>
-              <p className={cn("mt-2 text-2xl font-bold tracking-tight", headingText)}>
-                {pendingCount}{" "}
-                <span className={cn("text-xs font-normal", subText)}>
-                  {pendingCount === 1 ? "pending change" : "pending changes"}
-                </span>
-              </p>
-              <p className={cn("mt-1 font-mono text-[11px]", subText)}>
-                {pendingCount > 0
-                  ? "Ready to batch commit to Firestore"
-                  : "All collections synced with production"}
+        {/* MAIN CONTENT SHELL */}
+        <main className="mx-auto w-full max-w-[1440px] min-w-0 flex-1 space-y-5 p-6">
+          {/* APEX PAGE TITLE & SUBTITLE HEADER */}
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className={cn("text-xl font-semibold tracking-tight", headingText)}>
+                {activeNavMeta.label}
+              </h1>
+              <p className={cn("mt-0.5 text-xs", subText)}>
+                {activeNavMeta.subtitle}
               </p>
             </div>
           </div>
@@ -1133,19 +1272,19 @@ export function AdminStudioView() {
           {changes.length > 0 && (
             <div
               className={cn(
-                "rounded-xl border p-4",
+                "rounded-lg border p-4",
                 isLight
                   ? "border-amber-300 bg-amber-50/90"
-                  : "border-amber-500/30 bg-[#14131c]",
+                  : "border-[#f5c43d]/40 bg-[#25285a]",
               )}
             >
               <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b pb-3", borderClass)}>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                  <span className="inline-flex h-2 w-2 rounded-full bg-[#f5c43d]" />
                   <h2
                     className={cn(
                       "text-xs font-semibold uppercase tracking-wider",
-                      isLight ? "text-amber-900" : "text-amber-200",
+                      isLight ? "text-amber-900" : "text-[#f5c43d]",
                     )}
                   >
                     Staged Changes Queue ({changes.length})
@@ -1168,8 +1307,8 @@ export function AdminStudioView() {
                       className={cn(
                         "rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase",
                         c.action === "delete"
-                          ? "bg-rose-500/20 text-rose-600 dark:text-rose-300"
-                          : "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300",
+                          ? "bg-[#ff3565]/20 text-[#ff3565]"
+                          : "bg-[#13c276]/20 text-[#13c276]",
                       )}
                     >
                       {c.action === "delete" ? "DELETE" : "UPSERT"}
@@ -1179,7 +1318,7 @@ export function AdminStudioView() {
                       type="button"
                       onClick={() => discardStagedChange(c)}
                       aria-label={`Discard ${c.label}`}
-                      className={cn("ml-1 rounded p-0.5 hover:text-rose-500", subText)}
+                      className={cn("ml-1 rounded p-0.5 hover:text-[#ff3565]", subText)}
                     >
                       <X size={12} />
                     </button>
@@ -1191,19 +1330,36 @@ export function AdminStudioView() {
 
           {/* STATUS TOAST BANNER */}
           {status && (
-            <div className="flex items-center justify-between rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-700 dark:text-indigo-200">
+            <div className="flex items-center justify-between rounded-lg border border-[#ff3565]/40 bg-[#ff3565]/15 px-4 py-3 text-xs text-white">
               <div className="flex items-center gap-2.5">
-                <CheckCircle2 size={16} className="shrink-0 text-indigo-500" />
-                <span className="font-medium">{status}</span>
+                <CheckCircle2 size={16} className="shrink-0 text-[#ff3565]" />
+                <span className={cn("font-medium", headingText)}>{status}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setStatus(null)}
-                className="text-indigo-500 hover:opacity-80"
+                className="text-[#ff3565] hover:opacity-80"
               >
                 <X size={14} />
               </button>
             </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* TAB 0: APEX ANALYTICS DASHBOARD OVERVIEW                          */}
+          {/* ================================================================= */}
+          {tab === "dashboard" && (
+            <AdminDashboardOverview
+              albums={albums}
+              tracks={tracks}
+              members={members}
+              news={news}
+              pendingCount={pendingCount}
+              isLight={isLight}
+              theme={theme}
+              onNavigateTab={(targetTab) => setTab(targetTab)}
+              onInspectAlbum={(album) => loadAlbumIntoForm(album)}
+            />
           )}
 
           {/* ================================================================= */}
@@ -1235,7 +1391,7 @@ export function AdminStudioView() {
                           key={a.id}
                           className={cn(
                             "flex items-center justify-between gap-4 px-5 py-3 transition-colors",
-                            isEditing ? "bg-indigo-500/10" : rowHover,
+                            isEditing ? activeRowBg : rowHover,
                           )}
                         >
                           <div className="flex min-w-0 flex-1 items-center gap-3.5">
@@ -1253,16 +1409,14 @@ export function AdminStudioView() {
                                   {a.title}
                                 </p>
                                 {isFeatured && (
-                                  <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-amber-600 dark:text-amber-300">
+                                  <span className="inline-flex items-center gap-1 rounded border border-[#f5c43d]/40 bg-[#f5c43d]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#f5c43d]">
                                     ★ Featured Era
                                   </span>
                                 )}
                                 <span
                                   className={cn(
                                     "rounded px-1.5 py-0.5 font-mono text-[10px]",
-                                    isLight
-                                      ? "bg-slate-100 text-slate-600"
-                                      : "bg-slate-800 text-slate-300",
+                                    badgeNeutral,
                                   )}
                                 >
                                   {a.type}
@@ -1288,7 +1442,7 @@ export function AdminStudioView() {
                               className={cn(
                                 "inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors",
                                 isEditing
-                                  ? "border-indigo-500 bg-indigo-600 text-white"
+                                  ? "border-[#ff3565] bg-[#ff3565] text-white"
                                   : secondaryBtn,
                               )}
                             >
@@ -1338,7 +1492,7 @@ export function AdminStudioView() {
                 >
                   <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
                     <div className="flex items-center gap-2">
-                      <FolderKanban size={16} className="text-indigo-500" />
+                      <FolderKanban size={16} className="text-[#ff3565]" />
                       <div>
                         <h3 className={cn("text-sm font-semibold", headingText)}>
                           {editingAlbumId ? "Edit Album Record" : "Create New Album"}
@@ -1462,7 +1616,10 @@ export function AdminStudioView() {
 
                   <button
                     type="submit"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500"
+                    className={cn(
+                      "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all",
+                      primaryBtn,
+                    )}
                   >
                     <Plus size={14} />
                     {editingAlbumId ? "Stage Album Update" : "Stage New Album"}
@@ -1502,7 +1659,7 @@ export function AdminStudioView() {
                           className={cn(
                             "rounded-md px-2.5 py-1 font-mono text-[10px] font-semibold transition-colors",
                             trackAudioStatusFilter === pill.id
-                              ? "bg-indigo-600 text-white"
+                              ? primaryBtn
                               : secondaryBtn,
                           )}
                         >
@@ -1587,7 +1744,7 @@ export function AdminStudioView() {
                             key={t.id}
                             className={cn(
                               "flex items-center justify-between gap-4 px-5 py-3 transition-colors",
-                              isEditing ? "bg-indigo-500/10" : rowHover,
+                              isEditing ? activeRowBg : rowHover,
                             )}
                           >
                             <div className="flex min-w-0 flex-1 items-center gap-3.5">
@@ -1615,36 +1772,36 @@ export function AdminStudioView() {
                                       className={cn(
                                         "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase",
                                         isItunes
-                                          ? "border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-300"
-                                          : "border-emerald-500/30 bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
+                                          ? "border-[#f5c43d]/40 bg-[#f5c43d]/15 text-[#f5c43d]"
+                                          : "border-[#13c276]/30 bg-[#13c276]/15 text-[#13c276]",
                                       )}
                                     >
                                       {isItunes ? "⚠ 30s iTunes Preview" : "⚡ Full Direct Audio"}
                                     </span>
                                   )}
                                   {ytId && (
-                                    <span className="inline-flex items-center gap-1 rounded border border-rose-500/30 bg-rose-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-rose-600 dark:text-rose-300">
+                                    <span className="inline-flex items-center gap-1 rounded border border-[#ff3565]/30 bg-[#ff3565]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#ff3565]">
                                       <Play size={8} className="fill-current" />
                                       YT: {ytId}
                                     </span>
                                   )}
                                   {t.isTitleTrack && (
-                                    <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-indigo-600 dark:text-indigo-300">
+                                    <span className="rounded bg-[#1992ff]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#1992ff]">
                                       Title
                                     </span>
                                   )}
                                   {t.isSolo && (
-                                    <span className="rounded bg-purple-500/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-purple-600 dark:text-purple-300">
+                                    <span className="rounded bg-[#a845ff]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#a845ff]">
                                       Solo · {t.artist}
                                     </span>
                                   )}
                                   {t.lyricsAvailable && (
-                                    <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-emerald-600 dark:text-emerald-300">
+                                    <span className="rounded bg-[#13c276]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#13c276]">
                                       Lyrics
                                     </span>
                                   )}
                                   {isFeaturedSong && (
-                                    <span className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-amber-600 dark:text-amber-300">
+                                    <span className="rounded border border-[#f5c43d]/40 bg-[#f5c43d]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#f5c43d]">
                                       ★ Featured Song
                                     </span>
                                   )}
@@ -1666,8 +1823,8 @@ export function AdminStudioView() {
                                   className={cn(
                                     "inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition-colors",
                                     isItunes
-                                      ? "border-rose-500/40 bg-rose-500/15 text-rose-600 hover:bg-rose-500/25 dark:text-rose-300"
-                                      : "border-slate-700 bg-slate-800/80 text-slate-300 hover:border-rose-500/40 hover:text-rose-400",
+                                      ? "border-[#ff3565]/40 bg-[#ff3565]/15 text-[#ff3565] hover:bg-[#ff3565]/25"
+                                      : cn(secondaryBtn, "hover:border-[#ff3565] hover:text-[#ff3565]"),
                                   )}
                                 >
                                   <Unlink size={12} />
@@ -1680,7 +1837,7 @@ export function AdminStudioView() {
                                 className={cn(
                                   "inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors",
                                   isEditing
-                                    ? "border-indigo-500 bg-indigo-600 text-white"
+                                    ? "border-[#ff3565] bg-[#ff3565] text-white"
                                     : secondaryBtn,
                                 )}
                               >
@@ -1730,7 +1887,7 @@ export function AdminStudioView() {
                 >
                   <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
                     <div className="flex items-center gap-2">
-                      <ListMusic size={16} className="text-indigo-500" />
+                      <ListMusic size={16} className="text-[#ff3565]" />
                       <div>
                         <h3 className={cn("text-sm font-semibold", headingText)}>
                           {editingTrackId ? "Edit Track, Audio & Lyrics" : "Add Track to Release"}
@@ -1783,7 +1940,7 @@ export function AdminStudioView() {
                   {/* Manual Full-Song Direct Cloud Audio & YouTube Stream Box */}
                   <div className={cn("space-y-3 rounded-lg border p-3.5", subPanelBg)}>
                     <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
+                      <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#ff3565]">
                         <Volume2 size={13} /> Manual Full-Song Audio Source
                       </span>
                       <div className="flex items-center gap-1.5">
@@ -1792,8 +1949,8 @@ export function AdminStudioView() {
                             className={cn(
                               "rounded px-2 py-0.5 font-mono text-[10px] font-semibold",
                               isItunesPreviewUrl(trackAudioUrl)
-                                ? "bg-amber-500/15 text-amber-600 dark:text-amber-300"
-                                : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300",
+                                ? "bg-[#f5c43d]/15 text-[#f5c43d]"
+                                : "bg-[#13c276]/15 text-[#13c276]",
                             )}
                           >
                             {isItunesPreviewUrl(trackAudioUrl)
@@ -1802,7 +1959,7 @@ export function AdminStudioView() {
                           </span>
                         )}
                         {parsedYoutubeIdPreview && (
-                          <span className="rounded bg-rose-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-rose-600 dark:text-rose-300">
+                          <span className="rounded bg-[#ff3565]/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#ff3565]">
                             ✓ YT ID: {parsedYoutubeIdPreview}
                           </span>
                         )}
@@ -1814,8 +1971,8 @@ export function AdminStudioView() {
                       className={cn(
                         "flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-colors",
                         uploadingAudio
-                          ? "border-indigo-500 bg-indigo-500/10 text-indigo-400"
-                          : "border-indigo-500/40 bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 dark:text-indigo-300",
+                          ? "border-[#ff3565] bg-[#ff3565]/15 text-[#ff3565]"
+                          : "border-[#ff3565]/40 bg-[#ff3565]/10 text-[#ff3565] hover:bg-[#ff3565]/20",
                       )}
                     >
                       <Upload size={14} />
@@ -1949,7 +2106,7 @@ export function AdminStudioView() {
                           type="checkbox"
                           checked={trackIsTitle}
                           onChange={(e) => setTrackIsTitle(e.target.checked)}
-                          className="accent-indigo-500"
+                          className="accent-[#ff3565]"
                         />
                         Mark as Title Track
                       </label>
@@ -1982,7 +2139,10 @@ export function AdminStudioView() {
 
                   <button
                     type="submit"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500"
+                    className={cn(
+                      "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all",
+                      primaryBtn,
+                    )}
                   >
                     <Plus size={14} />
                     {editingTrackId ? "Stage Song Update" : "Stage New Song"}
@@ -2018,9 +2178,7 @@ export function AdminStudioView() {
                           onClick={() => setSelectedMemberId(m.id)}
                           className={cn(
                             "flex w-full items-center gap-3.5 px-5 py-3.5 text-left transition-colors",
-                            active
-                              ? "bg-indigo-500/15 ring-1 ring-inset ring-indigo-500/30"
-                              : rowHover,
+                            active ? activeRowBg : rowHover,
                           )}
                         >
                           <div className={cn("h-12 w-12 shrink-0 overflow-hidden rounded-lg border", borderClass)}>
@@ -2041,7 +2199,7 @@ export function AdminStudioView() {
                                 0{idx + 1}
                               </span>
                             </div>
-                            <p className="mt-0.5 truncate text-xs text-indigo-500">{m.position}</p>
+                            <p className="mt-0.5 truncate text-xs text-[#ff3565]">{m.position}</p>
                             <p className={cn("mt-0.5 font-mono text-[10px]", mutedMonoText)}>
                               {m.birthday ?? `b. ${m.birthYear}`} · {(m.facts ?? []).length} archive
                               notes
@@ -2075,7 +2233,7 @@ export function AdminStudioView() {
                           <h3 className={cn("text-base font-semibold", headingText)}>
                             {memberName || "Member"} Profile Dossier
                           </h3>
-                          <span className="rounded bg-indigo-500/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-500">
+                          <span className="rounded bg-[#ff3565]/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#ff3565]">
                             ID: {selectedMemberId}
                           </span>
                         </div>
@@ -2202,7 +2360,10 @@ export function AdminStudioView() {
                   <div className="flex justify-end pt-2">
                     <button
                       type="submit"
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500"
+                      className={cn(
+                        "inline-flex items-center justify-center gap-2 rounded-lg px-6 py-2.5 text-xs font-semibold transition-all",
+                        primaryBtn,
+                      )}
                     >
                       <Plus size={14} />
                       Stage Profile Changes for {memberName}
@@ -2238,12 +2399,12 @@ export function AdminStudioView() {
                           key={item.id}
                           className={cn(
                             "flex items-start justify-between gap-4 px-5 py-3.5 transition-colors",
-                            isEditing ? "bg-indigo-500/10" : rowHover,
+                            isEditing ? activeRowBg : rowHover,
                           )}
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded bg-indigo-500/20 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase text-indigo-600 dark:text-indigo-300">
+                              <span className="rounded bg-[#ff3565]/20 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase text-[#ff3565]">
                                 {item.category}
                               </span>
                               <span className={cn("font-mono text-[11px]", subText)}>
@@ -2253,9 +2414,7 @@ export function AdminStudioView() {
                                 <span
                                   className={cn(
                                     "rounded px-1.5 py-0.5 font-mono text-[10px]",
-                                    isLight
-                                      ? "bg-slate-100 text-slate-600"
-                                      : "bg-slate-800 text-slate-300",
+                                    badgeNeutral,
                                   )}
                                 >
                                   Album: {item.albumId}
@@ -2277,7 +2436,7 @@ export function AdminStudioView() {
                               className={cn(
                                 "inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors",
                                 isEditing
-                                  ? "border-indigo-500 bg-indigo-600 text-white"
+                                  ? "border-[#ff3565] bg-[#ff3565] text-white"
                                   : secondaryBtn,
                               )}
                             >
@@ -2314,7 +2473,7 @@ export function AdminStudioView() {
                 >
                   <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
                     <div className="flex items-center gap-2">
-                      <FileText size={16} className="text-indigo-500" />
+                      <FileText size={16} className="text-[#ff3565]" />
                       <div>
                         <h3 className={cn("text-sm font-semibold", headingText)}>
                           {editingNewsId ? "Edit News Dispatch" : "Create News Dispatch"}
@@ -2429,7 +2588,10 @@ export function AdminStudioView() {
 
                   <button
                     type="submit"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500"
+                    className={cn(
+                      "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all",
+                      primaryBtn,
+                    )}
                   >
                     <Plus size={14} />
                     {editingNewsId ? "Stage News Update" : "Stage New Dispatch"}
@@ -2447,7 +2609,7 @@ export function AdminStudioView() {
               <div className="lg:col-span-7">
                 <div className={cn("rounded-xl border p-6", panelBg)}>
                   <div className="flex items-start gap-3.5">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-500">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-md">
                       <Database size={18} />
                     </div>
                     <div>
@@ -2487,7 +2649,10 @@ export function AdminStudioView() {
                       type="button"
                       disabled={busy}
                       onClick={() => void handleSeed()}
-                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                      className={cn(
+                        "inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
+                        primaryBtn,
+                      )}
                     >
                       <Sparkles size={14} />
                       {busy ? "Seeding Firestore Collections..." : "Seed Complete Archive to Firestore"}
@@ -2503,26 +2668,27 @@ export function AdminStudioView() {
                   </h3>
                   <ul className={cn("mt-3 space-y-2.5 text-xs leading-relaxed", subText)}>
                     <li className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff3565]" />
                       <span>
-                        <strong>YouTube Audio Streaming:</strong> Paste any YouTube link into a song
-                        record under <em>Songs &amp; Audio</em> to enable real music playback
-                        synced with the glowing curly progress bar.
+                        <strong>YouTube &amp; 0ms Direct Audio:</strong> Upload an <code>.mp3</code> /{" "}
+                        <code>.m4a</code> file or paste a YouTube link into any song under{" "}
+                        <em>Songs &amp; Audio</em> for real music playback synced with the glowing
+                        progress bar.
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#13c276]" />
                       <span>
                         <strong>Atomic Batch Push:</strong> Clicking{" "}
-                        <em>Push Live Changes</em> commits all queued operations to Firestore in a
+                        <em>Push Live</em> commits all queued operations to Firestore in a
                         single batch transaction.
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1992ff]" />
                       <span>
                         <strong>Instant Mobile Sync:</strong> Connected Android devices receive the
-                        updated YouTube song links and catalog changes immediately.
+                        updated song links and catalog changes immediately.
                       </span>
                     </li>
                   </ul>
