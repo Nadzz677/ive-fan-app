@@ -12,14 +12,12 @@ import { cn } from "@/lib/utils";
 const SLIDE_COUNT = 4;
 
 /**
- * Returns the shortest signed circular distance (`-N/2 .. +N/2`) from `activeIdx` to `itemIdx`.
+ * Returns the continuous signed circular distance (`-total/2 .. +total/2`) from continuous `phase` to `itemIdx`.
  */
-function getCircularOffset(itemIdx: number, activeIdx: number, total: number): number {
+function getContinuousOffset(itemIdx: number, phase: number, total: number): number {
   if (total <= 0) return 0;
-  let diff = itemIdx - activeIdx;
-  const half = Math.floor(total / 2);
-  while (diff > half) diff -= total;
-  while (diff < -half) diff += total;
+  let diff = ((itemIdx - phase) % total + total) % total;
+  if (diff > total / 2) diff -= total;
   return diff;
 }
 
@@ -38,10 +36,8 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
   const [slide, setSlide] = useState(0);
   const touchStartX = useRef<number | null>(null);
 
-  // Continuous rotation indices for Slides 2, 3, and 4
-  const [memberRotIdx, setMemberRotIdx] = useState(0);
-  const [albumRotIdx, setAlbumRotIdx] = useState(0);
-  const [themeRotIdx, setThemeRotIdx] = useState(0);
+  // Continuous 60fps nonstop elapsed clock (in seconds) for buttery non-stop rotations!
+  const [elapsedSec, setElapsedSec] = useState(0);
 
   const welcomeCoverUrl = useMemo(() => {
     return (
@@ -57,25 +53,21 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
     return withCovers.length > 0 ? withCovers : albums;
   }, [albums]);
 
-  // Keep continuous rotation timers running so every Welcome Tour page feels alive & dynamic
-  useEffect(() => {
-    if (isNative && hasCompletedOnboarding) return;
-    const memberTimer = window.setInterval(() => {
-      setMemberRotIdx((prev) => (prev + 1) % Math.max(1, members.length));
-    }, 2100);
-    const albumTimer = window.setInterval(() => {
-      setAlbumRotIdx((prev) => (prev + 1) % Math.max(1, rotatingAlbums.length));
-    }, 1900);
-    const themeTimer = window.setInterval(() => {
-      setThemeRotIdx((prev) => (prev + 1) % THEMES.length);
-    }, 1750);
+  const isWelcomeVisible = (isNative || isPreviewingFanApp) && !hasCompletedOnboarding;
 
-    return () => {
-      window.clearInterval(memberTimer);
-      window.clearInterval(albumTimer);
-      window.clearInterval(themeTimer);
+  // Nonstop 60fps requestAnimationFrame clock (zero stepping, zero pausing!)
+  useEffect(() => {
+    if (!isWelcomeVisible) return;
+    let frameId = 0;
+    const startTime = performance.now();
+
+    const tick = (now: number) => {
+      setElapsedSec((now - startTime) / 1000);
+      frameId = window.requestAnimationFrame(tick);
     };
-  }, [isNative, hasCompletedOnboarding, members.length, rotatingAlbums.length]);
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [isWelcomeVisible]);
 
   // 1. Desktop Browser (`npm run dev`): Defaults straight into Admin Studio,
   //    with a one-click "Preview Fan App" mode to inspect staged changes in the live UI!
@@ -151,10 +143,24 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const activeMember = members[memberRotIdx % Math.max(1, members.length)] ?? members[0];
-  const activeAlbum =
-    rotatingAlbums[albumRotIdx % Math.max(1, rotatingAlbums.length)] ?? rotatingAlbums[0];
-  const activeTheme = THEMES[themeRotIdx % THEMES.length] ?? THEMES[0]!;
+  // Continuous nonstop floating phases (zero stopping!)
+  const memberPhase = elapsedSec * 0.42;
+  const albumPhase = elapsedSec * 0.52;
+  const themePhase = elapsedSec * 0.62;
+
+  const nearestMemberIdx =
+    ((Math.round(memberPhase) % Math.max(1, members.length)) + Math.max(1, members.length)) %
+    Math.max(1, members.length);
+  const nearestAlbumIdx =
+    ((Math.round(albumPhase) % Math.max(1, rotatingAlbums.length)) +
+      Math.max(1, rotatingAlbums.length)) %
+    Math.max(1, rotatingAlbums.length);
+  const nearestThemeIdx =
+    ((Math.round(themePhase) % THEMES.length) + THEMES.length) % THEMES.length;
+
+  const activeMember = members[nearestMemberIdx] ?? members[0];
+  const activeAlbum = rotatingAlbums[nearestAlbumIdx] ?? rotatingAlbums[0];
+  const activeTheme = THEMES[nearestThemeIdx] ?? THEMES[0]!;
 
   return (
     <div
@@ -162,7 +168,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
       onTouchEnd={handleTouchEnd}
       className="stage-gradient relative flex min-h-screen flex-col justify-between overflow-hidden px-6 pt-8 pb-10"
     >
-      {/* Top Bar: Only right-aligned Skip button (00 // 00 top-left counter removed!) */}
+      {/* Top Bar: Only right-aligned Skip button */}
       <div className="mx-auto flex w-full max-w-md items-center justify-end">
         <button
           type="button"
@@ -184,10 +190,10 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
               {/* Outer Breathing Multi-Layer Neon Glow Aura */}
               <div
                 aria-hidden="true"
-                className="album-glow-aura pointer-events-none absolute -inset-5 rounded-[2.6rem] opacity-80 blur-2xl"
+                className="album-glow-aura pointer-events-none absolute -inset-7 rounded-full opacity-80 blur-3xl"
                 style={{
                   background:
-                    "radial-gradient(circle, var(--primary) 0%, var(--accent) 55%, transparent 78%)",
+                    "radial-gradient(circle, var(--primary) 0%, var(--accent) 52%, transparent 74%)",
                 }}
               />
 
@@ -235,62 +241,65 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ================================================================= */}
-        {/* SLIDE 2: SIX EDITORIAL DOSSIERS (Continuous 3D Glowing 6-Member)  */}
+        {/* SLIDE 2: SIX EDITORIAL DOSSIERS (Nonstop 60fps 3D Glowing Orbit)  */}
         {/* ================================================================= */}
         {slide === 1 && (
           <div key="slide-1" className="fade-up flex w-full flex-col items-center">
             <div className="relative flex h-56 w-full max-w-[340px] items-center justify-center">
-              {/* Ambient Pulsing Stage Aura */}
+              {/* Unclipped Soft Ambient Stage Glow */}
               <div
                 aria-hidden="true"
-                className="album-glow-aura pointer-events-none absolute h-44 w-56 rounded-full opacity-75 blur-2xl"
+                className="album-glow-aura pointer-events-none absolute h-52 w-64 rounded-full opacity-75 blur-3xl"
                 style={{
                   background:
-                    "radial-gradient(circle, var(--primary) 0%, var(--accent) 58%, transparent 80%)",
+                    "radial-gradient(circle, var(--primary) 0%, var(--accent) 55%, transparent 76%)",
                 }}
               />
 
-              {/* Continuous 3D Rotating Deck of All 6 Members */}
+              {/* Nonstop Continuous 3D Elliptical Orbit of All 6 Members */}
               {members.map((m, idx) => {
-                const rel = getCircularOffset(idx, memberRotIdx, members.length);
-                const isCenter = rel === 0;
-                const isWing = Math.abs(rel) === 1;
-                const isBack = Math.abs(rel) === 2;
+                const count = Math.max(1, members.length);
+                const rel = getContinuousOffset(idx, memberPhase, count);
+                const theta = (rel / count) * Math.PI * 2;
+                const depth = Math.cos(theta); // +1 front spotlight, -1 back
+                const frontNorm = (depth + 1) / 2; // 0..1
 
-                const translateX =
-                  isCenter ? 0 : isWing ? rel * 86 : isBack ? rel * 56 : 0;
-                const translateY = isCenter ? -6 : isWing ? 8 : 20;
-                const scale = isCenter ? 1.08 : isWing ? 0.86 : isBack ? 0.7 : 0.55;
-                const rotateDeg = isCenter ? 0 : isWing ? rel * 9 : rel * 14;
-                const opacity = isCenter ? 1 : isWing ? 0.82 : isBack ? 0.28 : 0;
-                const zIndex = isCenter ? 30 : isWing ? 20 : isBack ? 10 : 0;
+                const translateX = Math.sin(theta) * 116;
+                const translateY = (1 - frontNorm) * 16 - 4;
+                const scale = 0.66 + frontNorm * 0.44;
+                const rotateDeg = Math.sin(theta) * 9;
+                const opacity = 0.22 + Math.pow(frontNorm, 1.45) * 0.78;
+                const zIndex = Math.round(frontNorm * 30);
+                const glowStrength = Math.pow(Math.max(0, (depth - 0.45) / 0.55), 1.6);
 
                 return (
-                  <button
+                  <div
                     key={m.id}
-                    type="button"
-                    onClick={() => setMemberRotIdx(idx)}
                     style={{
-                      transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale}) rotate(${rotateDeg}deg)`,
+                      transform: `translate3d(${translateX.toFixed(1)}px, ${translateY.toFixed(1)}px, 0) scale(${scale.toFixed(3)}) rotate(${rotateDeg.toFixed(2)}deg)`,
                       opacity,
                       zIndex,
-                      boxShadow: isCenter
-                        ? "0 0 36px -2px var(--primary), 0 0 64px -10px var(--accent)"
-                        : "0 14px 30px -10px rgba(0,0,0,0.65)",
+                      boxShadow:
+                        glowStrength > 0.05
+                          ? `0 0 ${(38 * glowStrength).toFixed(1)}px -2px var(--primary), 0 0 ${(64 * glowStrength).toFixed(1)}px -8px var(--accent)`
+                          : "0 12px 26px -10px rgba(0,0,0,0.65)",
                     }}
                     className={cn(
-                      "absolute h-44 w-32 overflow-hidden rounded-2xl p-[2px] transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                      isCenter ? "ring-1 ring-white/40" : "border border-white/20 bg-surface",
+                      "pointer-events-none absolute h-44 w-32 overflow-hidden rounded-2xl p-[2px] will-change-transform",
+                      glowStrength > 0.35
+                        ? "ring-1 ring-white/45"
+                        : "border border-white/15 bg-surface",
                     )}
                   >
-                    {isCenter && (
+                    {glowStrength > 0.2 && (
                       <div
                         aria-hidden="true"
-                        className="album-beam-active absolute -inset-[100%]"
                         style={{
+                          opacity: glowStrength,
                           background:
                             "conic-gradient(from 0deg, transparent 0deg, var(--primary) 110deg, var(--accent) 190deg, var(--highlight) 260deg, transparent 360deg)",
                         }}
+                        className="album-beam-active absolute -inset-[100%]"
                       />
                     )}
                     <div className="relative h-full w-full overflow-hidden rounded-[14px] bg-surface">
@@ -307,7 +316,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
                         </p>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -315,7 +324,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
             {/* Active Spotlight Member Pill */}
             {activeMember && (
               <div className="mt-1 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/15 px-3.5 py-1 shadow-[0_0_20px_-4px_var(--primary)] backdrop-blur-md">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
                 <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-foreground">
                   {activeMember.name} · {activeMember.koreanName}
                 </span>
@@ -336,63 +345,64 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ================================================================= */}
-        {/* SLIDE 3: EVERY ERA, EVERY TRACK (Continuous 3D Glowing All-Albums)*/}
+        {/* SLIDE 3: EVERY ERA, EVERY TRACK (Nonstop 60fps 3D Glowing Orbit)  */}
         {/* ================================================================= */}
         {slide === 2 && (
           <div key="slide-2" className="fade-up flex w-full flex-col items-center">
             <div className="relative flex h-52 w-full max-w-[340px] items-center justify-center">
-              {/* Ambient Pulsing Album Aura */}
+              {/* Unclipped Soft Ambient Album Aura */}
               <div
                 aria-hidden="true"
-                className="album-glow-aura pointer-events-none absolute h-44 w-56 rounded-full opacity-80 blur-2xl"
+                className="album-glow-aura pointer-events-none absolute h-48 w-64 rounded-full opacity-80 blur-3xl"
                 style={{
                   background:
-                    "radial-gradient(circle, var(--primary) 0%, var(--accent) 58%, transparent 80%)",
+                    "radial-gradient(circle, var(--primary) 0%, var(--accent) 55%, transparent 76%)",
                 }}
               />
 
-              {/* Continuous 3D Rotating Deck Across Every Album */}
+              {/* Nonstop Continuous 3D Curved Flow Across Every Album */}
               {rotatingAlbums.map((a, idx) => {
-                const rel = getCircularOffset(idx, albumRotIdx, rotatingAlbums.length);
-                const isCenter = rel === 0;
-                const isWing = Math.abs(rel) === 1;
-                const isBack = Math.abs(rel) === 2;
+                const rel = getContinuousOffset(idx, albumPhase, rotatingAlbums.length);
+                if (Math.abs(rel) > 2.65) return null;
 
-                if (Math.abs(rel) > 2) return null;
-
-                const translateX = isCenter ? 0 : isWing ? rel * 92 : rel * 60;
-                const translateY = isCenter ? -4 : isWing ? 10 : 22;
-                const scale = isCenter ? 1.1 : isWing ? 0.85 : 0.68;
-                const rotateDeg = isCenter ? 0 : isWing ? rel * 8 : rel * 13;
-                const opacity = isCenter ? 1 : isWing ? 0.84 : 0.25;
-                const zIndex = isCenter ? 30 : isWing ? 20 : 10;
+                const t = rel / 2.65; // -1 .. +1
+                const frontness = Math.max(0, Math.cos(t * Math.PI * 0.5)); // 1 at center, 0 at edges
+                const translateX = Math.sin(t * Math.PI * 0.65) * 142;
+                const translateY = (1 - frontness) * 18 - 4;
+                const scale = 0.62 + frontness * 0.5;
+                const rotateDeg = t * 13;
+                const opacity = Math.pow(frontness, 1.35);
+                const zIndex = Math.round(frontness * 30);
+                const glowStrength = Math.pow(Math.max(0, (frontness - 0.55) / 0.45), 1.6);
 
                 return (
-                  <button
+                  <div
                     key={a.id}
-                    type="button"
-                    onClick={() => setAlbumRotIdx(idx)}
                     style={{
-                      transform: `translate3d(${translateX}px, ${translateY}px, 0) scale(${scale}) rotate(${rotateDeg}deg)`,
+                      transform: `translate3d(${translateX.toFixed(1)}px, ${translateY.toFixed(1)}px, 0) scale(${scale.toFixed(3)}) rotate(${rotateDeg.toFixed(2)}deg)`,
                       opacity,
                       zIndex,
-                      boxShadow: isCenter
-                        ? "0 0 40px -2px var(--primary), 0 0 68px -8px var(--accent)"
-                        : "0 14px 30px -10px rgba(0,0,0,0.65)",
+                      boxShadow:
+                        glowStrength > 0.05
+                          ? `0 0 ${(42 * glowStrength).toFixed(1)}px -2px var(--primary), 0 0 ${(68 * glowStrength).toFixed(1)}px -8px var(--accent)`
+                          : "0 12px 28px -10px rgba(0,0,0,0.65)",
                     }}
                     className={cn(
-                      "absolute h-36 w-36 overflow-hidden rounded-2xl p-[2.5px] transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                      isCenter ? "ring-1 ring-white/40" : "border border-white/15 bg-surface",
+                      "pointer-events-none absolute h-36 w-36 overflow-hidden rounded-2xl p-[2.5px] will-change-transform",
+                      glowStrength > 0.35
+                        ? "ring-1 ring-white/45"
+                        : "border border-white/15 bg-surface",
                     )}
                   >
-                    {isCenter && (
+                    {glowStrength > 0.2 && (
                       <div
                         aria-hidden="true"
-                        className="album-beam-active absolute -inset-[100%]"
                         style={{
+                          opacity: glowStrength,
                           background:
                             "conic-gradient(from 0deg, transparent 0deg, var(--primary) 110deg, var(--accent) 190deg, var(--highlight) 260deg, transparent 360deg)",
                         }}
+                        className="album-beam-active absolute -inset-[100%]"
                       />
                     )}
                     <div className="relative h-full w-full overflow-hidden rounded-[14px] bg-surface">
@@ -403,7 +413,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
                         className="h-full w-full object-cover"
                       />
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
@@ -411,7 +421,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
             {/* Active Spotlight Era Badge */}
             {activeAlbum && (
               <div className="mt-1 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/15 px-3.5 py-1 shadow-[0_0_20px_-4px_var(--primary)] backdrop-blur-md">
-                <Disc3 size={12} className="text-primary animate-spin" />
+                <Disc3 size={12} className="animate-spin text-primary" />
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-foreground">
                   {activeAlbum.title} · {activeAlbum.releaseDate.slice(0, 4)}
                 </span>
@@ -432,51 +442,51 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ================================================================= */}
-        {/* SLIDE 4: 11 LIVING ERA THEMES (Vertical Fade + Swatch Glow Drum)  */}
+        {/* SLIDE 4: 11 LIVING ERA THEMES (Nonstop Vertical Fade Stream,      */}
+        {/*          ZERO Rectangular Clip Box!)                              */}
         {/* ================================================================= */}
         {slide === 3 && (
           <div key="slide-3" className="fade-up flex w-full flex-col items-center">
-            <div className="relative flex h-60 w-full max-w-[310px] items-center justify-center overflow-hidden">
-              {/* Dynamic Era-Matched Radial Glow Aura that morphs to the centered theme's swatch */}
+            {/* IMPORTANT: No `overflow-hidden` here so the radial glow feathers organically with ZERO visible rectangle! */}
+            <div className="relative flex h-60 w-full max-w-[320px] items-center justify-center">
+              {/* Free-Floating Radial Swatch Glow Aura (feathers seamlessly into the page background) */}
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute h-44 w-60 rounded-full opacity-75 blur-2xl transition-all duration-700"
+                className="pointer-events-none absolute -inset-10 rounded-full opacity-55 blur-3xl transition-colors duration-700"
                 style={{
-                  background: `radial-gradient(circle, ${activeTheme.swatch[1]} 0%, ${activeTheme.swatch[2]} 58%, transparent 80%)`,
+                  background: `radial-gradient(circle, ${activeTheme.swatch[1]} 0%, color-mix(in oklab, ${activeTheme.swatch[2]} 45%, transparent) 42%, transparent 70%)`,
                 }}
               />
 
-              {/* Vertical Rotating Theme Drum with Smooth Top/Bottom Fade Animation */}
+              {/* Nonstop Continuous Vertical Flowing Theme Pills */}
               {THEMES.map((t, idx) => {
-                const rel = getCircularOffset(idx, themeRotIdx, THEMES.length);
-                if (Math.abs(rel) > 3) return null;
-
-                const isCenter = rel === 0;
-                const isAdjacent = Math.abs(rel) === 1;
-                const isOuter = Math.abs(rel) === 2;
+                const rel = getContinuousOffset(idx, themePhase, THEMES.length);
+                if (Math.abs(rel) > 2.55) return null;
 
                 const translateY = rel * 48;
-                const scale = isCenter ? 1.06 : isAdjacent ? 0.91 : isOuter ? 0.78 : 0.65;
-                const opacity = isCenter ? 1 : isAdjacent ? 0.5 : isOuter ? 0.16 : 0;
-                const zIndex = isCenter ? 30 : isAdjacent ? 20 : 10;
+                const centerFactor = Math.max(0, 1 - Math.abs(rel) / 2.55); // 1 at dead center, 0 at top/bottom edges
+                const scale = 0.78 + Math.pow(centerFactor, 1.25) * 0.28;
+                const opacity = Math.pow(centerFactor, 1.75);
+                const zIndex = Math.round(centerFactor * 30);
+                const glowStrength = Math.pow(Math.max(0, 1 - Math.abs(rel) / 0.8), 1.6);
 
                 return (
-                  <button
+                  <div
                     key={t.id}
-                    type="button"
-                    onClick={() => setThemeRotIdx(idx)}
                     style={{
-                      transform: `translate3d(0, ${translateY}px, 0) scale(${scale})`,
+                      transform: `translate3d(0, ${translateY.toFixed(1)}px, 0) scale(${scale.toFixed(3)})`,
                       opacity,
                       zIndex,
-                      borderColor: isCenter ? t.swatch[1] : "rgba(255,255,255,0.14)",
-                      boxShadow: isCenter
-                        ? `0 0 32px -2px ${t.swatch[1]}, 0 0 56px -10px ${t.swatch[2]}, inset 0 1px 1px rgba(255,255,255,0.35)`
-                        : "none",
+                      borderColor:
+                        glowStrength > 0.25 ? t.swatch[1] : "rgba(255,255,255,0.14)",
+                      boxShadow:
+                        glowStrength > 0.08
+                          ? `0 0 ${(32 * glowStrength).toFixed(1)}px -2px ${t.swatch[1]}, 0 0 ${(52 * glowStrength).toFixed(1)}px -10px ${t.swatch[2]}, inset 0 1px 1px rgba(255,255,255,0.35)`
+                          : "none",
                     }}
                     className={cn(
-                      "absolute flex w-[250px] items-center justify-between rounded-full border px-4 py-2.5 backdrop-blur-xl transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]",
-                      isCenter ? "bg-surface/90" : "bg-surface/55",
+                      "pointer-events-none absolute flex w-[252px] items-center justify-between rounded-full border px-4 py-2.5 backdrop-blur-xl will-change-transform",
+                      glowStrength > 0.35 ? "bg-surface/90" : "bg-surface/50",
                     )}
                   >
                     <div className="flex items-center gap-2.5">
@@ -485,7 +495,8 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
                           className="h-4 w-4 rounded-full ring-1 ring-white/30"
                           style={{
                             background: t.swatch[1],
-                            boxShadow: isCenter ? `0 0 10px ${t.swatch[1]}` : "none",
+                            boxShadow:
+                              glowStrength > 0.3 ? `0 0 10px ${t.swatch[1]}` : "none",
                           }}
                         />
                         <span
@@ -496,24 +507,27 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
                       <span
                         className={cn(
                           "font-mono text-[11px] uppercase tracking-wider",
-                          isCenter ? "font-bold text-white" : "font-medium text-foreground/80",
+                          glowStrength > 0.35
+                            ? "font-bold text-white"
+                            : "font-medium text-foreground/80",
                         )}
                       >
                         {t.name}
                       </span>
                     </div>
 
-                    {isCenter && (
+                    {glowStrength > 0.35 && (
                       <span
-                        className="rounded-full px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-widest text-white"
                         style={{
+                          opacity: glowStrength,
                           background: `linear-gradient(120deg, ${t.swatch[1]}, ${t.swatch[2]})`,
                         }}
+                        className="rounded-full px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-widest text-white"
                       >
                         Active Glow
                       </span>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
