@@ -114,6 +114,45 @@ export async function uploadTrackAudioToStorage(
 }
 
 /**
+ * Uploads a Home Screen Hero Banner photo (.JPG / .PNG / .WEBP / .AVIF) directly to Firebase Cloud Storage
+ * (`hero/<timestamp>-<filename>`) and returns its permanent public CDN download URL.
+ */
+export async function uploadHeroImageToStorage(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
+  if (!storage) {
+    throw new Error(
+      "Firebase Storage is not initialized. Check VITE_FIREBASE_STORAGE_BUCKET in .env.",
+    );
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  const storageRef = ref(storage, `hero/${Date.now()}-${safeName}`);
+
+  const uploadTask = uploadBytesResumable(storageRef, file, {
+    contentType: file.type || "image/jpeg",
+    cacheControl: "public, max-age=31536000, immutable",
+  });
+
+  return new Promise<string>((resolve, reject) => {
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        if (snapshot.totalBytes > 0) {
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          onProgress?.(pct);
+        }
+      },
+      (err) => reject(err),
+      () => {
+        void getDownloadURL(uploadTask.snapshot.ref).then(resolve).catch(reject);
+      },
+    );
+  });
+}
+
+/**
  * On-Device Audio Cache & Next-Track Preloader (`CacheStorage`).
  * Returns a local `blob:` ObjectURL if the track is already cached on the phone/browser (0ms!),
  * or returns the resolved network URL while caching it in the background for next time.

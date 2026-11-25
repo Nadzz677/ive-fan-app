@@ -11,17 +11,19 @@ export function PageHeader({
 }) {
   return (
     <header className="fade-up px-5 pb-5 pt-7">
-      <div className="flex items-center justify-between gap-3">
-        {eyebrow ? (
-          <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-primary">
-            {eyebrow}
-          </p>
-        ) : (
-          <span />
-        )}
-        {action && <div>{action}</div>}
-      </div>
-      <h1 className="font-editorial mt-2 text-[2.6rem] font-semibold leading-[1.02] tracking-tight">
+      {(eyebrow || action) && (
+        <div className="mb-2 flex items-center justify-between gap-3">
+          {eyebrow ? (
+            <p className="font-mono text-[10px] font-medium uppercase tracking-[0.26em] text-primary">
+              {eyebrow}
+            </p>
+          ) : (
+            <span />
+          )}
+          {action && <div>{action}</div>}
+        </div>
+      )}
+      <h1 className="font-editorial text-[2.6rem] font-semibold leading-[1.02] tracking-tight">
         {title}
       </h1>
       {subtitle && (

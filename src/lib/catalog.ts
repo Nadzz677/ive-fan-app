@@ -43,11 +43,22 @@ const CACHE_KEYS = {
 export interface AppConfig {
   featuredAlbumId: string;
   featuredTrackId: string;
+  heroImages: string[];
+  welcomeImage?: string;
 }
+
+export const DEFAULT_HERO_IMAGES: string[] = [
+  getNewsImage("dive-global-archive"),
+  getNewsImage("ive-empathy-release"),
+  getNewsImage("world-tour-encore"),
+  getNewsImage("switch-heya-promotion"),
+].filter(Boolean);
 
 const DEFAULT_CONFIG: AppConfig = {
   featuredAlbumId: staticFeaturedAlbumId,
   featuredTrackId: staticFeaturedTrackId,
+  heroImages: DEFAULT_HERO_IMAGES,
+  welcomeImage: DEFAULT_HERO_IMAGES[0] ?? "",
 };
 
 // ==========================================
@@ -214,7 +225,7 @@ export function useStagedCatalog() {
         key: "config-save",
         kind: "config",
         action: "save",
-        label: `Featured Era: ${state.config.featuredAlbumId}`,
+        label: `Home Config (${state.config.heroImages?.length ?? 1} Hero Photos · Era: ${state.config.featuredAlbumId})`,
         targetId: "app",
       });
     }
@@ -331,11 +342,29 @@ export function stageNewsDelete(newsId: string) {
   emitStageChange();
 }
 
-export function stageAppConfigSave(config: AppConfig) {
+export function stageAppConfigSave(partial: Partial<AppConfig>) {
+  const current = stagedState.config ?? liveConfigCache ?? DEFAULT_CONFIG;
+  const nextHero =
+    Array.isArray(partial.heroImages) && partial.heroImages.length > 0
+      ? partial.heroImages
+      : Array.isArray(current.heroImages) && current.heroImages.length > 0
+        ? current.heroImages
+        : DEFAULT_HERO_IMAGES;
+  const nextWelcome =
+    partial.welcomeImage !== undefined
+      ? partial.welcomeImage.trim() || nextHero[0] || DEFAULT_HERO_IMAGES[0] || ""
+      : current.welcomeImage?.trim() || nextHero[0] || DEFAULT_HERO_IMAGES[0] || "";
+  const nextConfig: AppConfig = {
+    featuredAlbumId: partial.featuredAlbumId ?? current.featuredAlbumId,
+    featuredTrackId: partial.featuredTrackId ?? current.featuredTrackId,
+    heroImages: nextHero,
+    welcomeImage: nextWelcome,
+  };
   stagedState = {
     ...stagedState,
-    config,
+    config: nextConfig,
   };
+  prewarmImageUrls([...nextConfig.heroImages, nextConfig.welcomeImage]);
   emitStageChange();
 }
 
@@ -451,13 +480,28 @@ let liveAlbumsCache: Album[] = readLocalCache<Album[]>(CACHE_KEYS.albums, static
 let liveTracksCache: Track[] = readLocalCache<Track[]>(CACHE_KEYS.tracks, staticTracks);
 let liveMembersCache: Member[] = readLocalCache<Member[]>(CACHE_KEYS.members, staticMembers);
 let liveNewsCache: NewsItem[] = readLocalCache<NewsItem[]>(CACHE_KEYS.news, staticNews);
-let liveConfigCache: AppConfig = readLocalCache<AppConfig>(CACHE_KEYS.config, DEFAULT_CONFIG);
+let liveConfigCache: AppConfig = (() => {
+  const cached = readLocalCache<AppConfig>(CACHE_KEYS.config, DEFAULT_CONFIG);
+  const heroImages =
+    Array.isArray(cached.heroImages) && cached.heroImages.length > 0
+      ? cached.heroImages
+      : DEFAULT_HERO_IMAGES;
+  const welcomeImage =
+    cached.welcomeImage?.trim() || heroImages[0] || DEFAULT_HERO_IMAGES[0] || "";
+  return {
+    featuredAlbumId: cached.featuredAlbumId || DEFAULT_CONFIG.featuredAlbumId,
+    featuredTrackId: cached.featuredTrackId || DEFAULT_CONFIG.featuredTrackId,
+    heroImages,
+    welcomeImage,
+  };
+})();
 
 // Prewarm any cached database artwork URLs immediately on startup
 if (typeof window !== "undefined") {
   prewarmImageUrls(liveAlbumsCache.map((a) => a.cover));
   prewarmImageUrls(liveMembersCache.map((m) => m.image));
   prewarmImageUrls(liveNewsCache.map((n) => n.image));
+  prewarmImageUrls([...liveConfigCache.heroImages, liveConfigCache.welcomeImage]);
 }
 
 export function getLiveAlbum(id?: string): Album | undefined {
@@ -654,12 +698,21 @@ async function fetchAppConfigFromFirestore(): Promise<AppConfig> {
   const snap = await getDoc(doc(db, "config", "app"));
   if (!snap.exists()) return liveConfigCache;
   const data = snap.data() as Partial<AppConfig>;
+  const rawHero = Array.isArray(data.heroImages)
+    ? data.heroImages.map((u) => String(u).trim()).filter(Boolean)
+    : [];
+  const heroImages = rawHero.length > 0 ? rawHero : DEFAULT_CONFIG.heroImages;
+  const welcomeImage =
+    data.welcomeImage?.trim() || heroImages[0] || DEFAULT_HERO_IMAGES[0] || "";
   const nextConfig: AppConfig = {
     featuredAlbumId: data.featuredAlbumId?.trim() || DEFAULT_CONFIG.featuredAlbumId,
     featuredTrackId: data.featuredTrackId?.trim() || DEFAULT_CONFIG.featuredTrackId,
+    heroImages,
+    welcomeImage,
   };
   liveConfigCache = nextConfig;
   writeLocalCache(CACHE_KEYS.config, nextConfig);
+  prewarmImageUrls([...nextConfig.heroImages, nextConfig.welcomeImage]);
   return nextConfig;
 }
 
@@ -725,12 +778,21 @@ function ensureRealtimeCatalogSync(queryClient: QueryClient) {
       (snap) => {
         if (snap.exists()) {
           const data = snap.data() as Partial<AppConfig>;
+          const rawHero = Array.isArray(data.heroImages)
+            ? data.heroImages.map((u) => String(u).trim()).filter(Boolean)
+            : [];
+          const heroImages = rawHero.length > 0 ? rawHero : DEFAULT_CONFIG.heroImages;
+          const welcomeImage =
+            data.welcomeImage?.trim() || heroImages[0] || DEFAULT_HERO_IMAGES[0] || "";
           const nextConfig: AppConfig = {
             featuredAlbumId: data.featuredAlbumId?.trim() || DEFAULT_CONFIG.featuredAlbumId,
             featuredTrackId: data.featuredTrackId?.trim() || DEFAULT_CONFIG.featuredTrackId,
+            heroImages,
+            welcomeImage,
           };
           liveConfigCache = nextConfig;
           writeLocalCache(CACHE_KEYS.config, nextConfig);
+          prewarmImageUrls([...nextConfig.heroImages, nextConfig.welcomeImage]);
           queryClient.setQueryData(["catalog", "config"], nextConfig);
         }
       },

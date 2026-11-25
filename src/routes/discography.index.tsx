@@ -45,7 +45,6 @@ function DiscographyPage() {
   return (
     <div className="pb-8">
       <PageHeader
-        eyebrow={`DISCOGRAPHY // ${recentAlbums.length} RELEASES`}
         title="Archive"
         subtitle="Every verified Korean, Japanese, and global release — organized by year."
       />

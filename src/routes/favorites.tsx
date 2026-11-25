@@ -69,7 +69,6 @@ function FavoritesPage() {
   return (
     <div className="pb-6">
       <PageHeader
-        eyebrow={count === 0 ? "COLLECTION // EMPTY" : `COLLECTION // ${count} SAVED`}
         title="Favorites"
         subtitle="Your curated IVE songs, albums, and biases — synced to your library."
       />

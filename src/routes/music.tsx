@@ -84,7 +84,6 @@ function MusicPage() {
   return (
     <div>
       <PageHeader
-        eyebrow={`${tracks.length} tracks`}
         title="Music"
         subtitle="Tap any track to stream full eras, member solos, and synchronized lyrics."
       />

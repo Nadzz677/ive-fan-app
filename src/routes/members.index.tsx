@@ -26,7 +26,6 @@ function MembersPage() {
   return (
     <div className="pb-6">
       <PageHeader
-        eyebrow="PHOTOCARD GALLERY // 06"
         title="Members"
         subtitle="Select a photocard to open the editorial profile and solo spotlight."
       />

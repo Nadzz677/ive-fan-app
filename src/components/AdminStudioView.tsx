@@ -1,20 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   AlertCircle,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
-  ChevronRight,
   Database,
   Disc3,
   Edit3,
   Eye,
   FileText,
   FolderKanban,
-  LayoutDashboard,
+  Image as ImageIcon,
   ListMusic,
   Lock,
   LogOut,
-  Menu,
   Moon,
   Newspaper,
   Play,
@@ -33,15 +34,16 @@ import {
   Volume2,
   X,
 } from "lucide-react";
-import { AdminDashboardOverview } from "@/components/admin/AdminDashboardOverview";
 import { getAdminTheme } from "@/components/admin/apex-theme";
 import { useAuth } from "@/lib/auth";
 import {
   isItunesPreviewUrl,
+  uploadHeroImageToStorage,
   uploadTrackAudioToStorage,
 } from "@/lib/audio-sources";
 import {
   clearAllStagedChanges,
+  DEFAULT_HERO_IMAGES,
   discardStagedChange,
   pushStagedChangesToFirestore,
   seedFirestoreCatalog,
@@ -61,7 +63,7 @@ import { ArtworkImage } from "@/components/ArtworkImage";
 import { cn } from "@/lib/utils";
 import type { Album, AlbumType, Member, NewsItem, Track, TrackLanguage } from "@/types";
 
-type AdminTab = "dashboard" | "albums" | "tracks" | "members" | "news" | "seed";
+type AdminTab = "albums" | "tracks" | "members" | "news" | "hero" | "seed";
 type AdminColorMode = "dark" | "light";
 
 const ADMIN_THEME_KEY = "ive-dive-archive:admin-theme";
@@ -106,11 +108,17 @@ export function AdminStudioView() {
   const { changes, pendingCount } = useStagedCatalog();
   const queryClient = useQueryClient();
 
-  const [tab, setTab] = useState<AdminTab>("dashboard");
+  const [tab, setTab] = useState<AdminTab>("albums");
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
+
+  // Home Hero Photo Carousel & Welcome Tour Cover Photo Manager state
+  const [newHeroUrl, setNewHeroUrl] = useState("");
+  const [uploadingHero, setUploadingHero] = useState(false);
+  const [heroUploadProgress, setHeroUploadProgress] = useState(0);
+  const [welcomePhotoInput, setWelcomePhotoInput] = useState("");
+  const [uploadingWelcomePhoto, setUploadingWelcomePhoto] = useState(false);
 
   // Admin Light / Dark theme state (persisted in localStorage)
   const [colorMode, setColorMode] = useState<AdminColorMode>(() => {
@@ -496,6 +504,114 @@ export function AdminStudioView() {
     setStatus(`Staged Featured Era "${nextAlbumId}". Click "Push Live Changes" when ready.`);
   };
 
+  const heroImagesList = useMemo(() => {
+    const list = (config.heroImages ?? []).map((u) => u.trim()).filter(Boolean);
+    return list.length > 0 ? list : DEFAULT_HERO_IMAGES;
+  }, [config.heroImages]);
+
+  const handleAddHeroPhotoUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newHeroUrl.trim();
+    if (!trimmed) return;
+    const nextList = [...heroImagesList, trimmed];
+    stageAppConfigSave({ heroImages: nextList });
+    setNewHeroUrl("");
+    setStatus(
+      `Staged new Home Screen Hero Photo (Slide ${nextList.length}). Click "Push Live" when ready!`,
+    );
+  };
+
+  const handleHeroFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingHero(true);
+    setHeroUploadProgress(0);
+    setStatus(null);
+    try {
+      const downloadUrl = await uploadHeroImageToStorage(file, (pct) =>
+        setHeroUploadProgress(pct),
+      );
+      const nextList = [...heroImagesList, downloadUrl];
+      stageAppConfigSave({ heroImages: nextList });
+      setStatus(
+        `Uploaded "${file.name}" and added as Slide ${nextList.length} on the Home Screen! Click "Push Live" to publish.`,
+      );
+    } catch (err: unknown) {
+      setStatus(
+        err instanceof Error
+          ? `Hero image upload failed: ${err.message}`
+          : "Failed to upload hero image to Firebase Storage.",
+      );
+    } finally {
+      setUploadingHero(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleMoveHeroPhoto = (index: number, direction: -1 | 1) => {
+    const targetIdx = index + direction;
+    if (targetIdx < 0 || targetIdx >= heroImagesList.length) return;
+    const nextList = [...heroImagesList];
+    const temp = nextList[index]!;
+    nextList[index] = nextList[targetIdx]!;
+    nextList[targetIdx] = temp;
+    stageAppConfigSave({ heroImages: nextList });
+    setStatus(`Reordered Home Screen Hero Photo to Slide ${targetIdx + 1}.`);
+  };
+
+  const handleRemoveHeroPhoto = (index: number) => {
+    if (heroImagesList.length <= 1) {
+      setStatus("At least 1 Hero Photo is required on the Home Screen.");
+      return;
+    }
+    const nextList = heroImagesList.filter((_, idx) => idx !== index);
+    stageAppConfigSave({ heroImages: nextList });
+    setStatus(
+      `Removed Slide ${index + 1} (${nextList.length} hero photo${nextList.length === 1 ? "" : "s"} remaining).`,
+    );
+  };
+
+  const handleResetDefaultHeroPhotos = () => {
+    stageAppConfigSave({ heroImages: DEFAULT_HERO_IMAGES });
+    setStatus("Restored baseline IVE Hero Photos. Click \"Push Live\" to apply.");
+  };
+
+  const activeWelcomePhoto =
+    config.welcomeImage?.trim() || heroImagesList[0] || DEFAULT_HERO_IMAGES[0] || "";
+
+  const handleSetWelcomePhotoUrl = (url: string) => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    stageAppConfigSave({ welcomeImage: trimmed });
+    setWelcomePhotoInput("");
+    setStatus(
+      "Staged new Welcome Tour Cover Photo (Slide 1)! Click \"Push Live Changes\" to publish.",
+    );
+  };
+
+  const handleWelcomePhotoFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingWelcomePhoto(true);
+    setStatus(null);
+    try {
+      const downloadUrl = await uploadHeroImageToStorage(file);
+      stageAppConfigSave({ welcomeImage: downloadUrl });
+      setStatus(
+        `Uploaded "${file.name}" as the Welcome Tour Cover Photo (Slide 1)! Click "Push Live Changes" to publish.`,
+      );
+    } catch (err: unknown) {
+      setStatus(
+        err instanceof Error
+          ? `Welcome photo upload failed: ${err.message}`
+          : "Failed to upload welcome photo to Firebase Storage.",
+      );
+    } finally {
+      setUploadingWelcomePhoto(false);
+      e.target.value = "";
+    }
+  };
+
   const handlePushLive = async () => {
     if (pendingCount === 0) return;
     setBusy(true);
@@ -549,6 +665,8 @@ export function AdminStudioView() {
     labelClass,
   } = theme;
 
+  const activeFeaturedAlbum = albums.find((a) => a.id === config.featuredAlbumId) ?? albums[0];
+  const activeFeaturedTrack = tracks.find((t) => t.id === config.featuredTrackId) ?? tracks[0];
   const currentAlbumForTracks = albums.find((a) => a.id === selectedAlbumId) ?? albums[0];
   const baseDisplayedTracks =
     trackViewFilter === "ALL" ? tracks : getAlbumTracks(trackViewFilter);
@@ -584,14 +702,6 @@ export function AdminStudioView() {
     icon: typeof Disc3;
   }[] = [
     {
-      id: "dashboard",
-      label: "Dashboard",
-      subtitle:
-        "A collection of analytics showing your catalog, audio streams, and Firestore sync data.",
-      group: "CONTENT",
-      icon: LayoutDashboard,
-    },
-    {
       id: "albums",
       label: "Discography Albums",
       subtitle: "Manage era releases, cover artwork, release dates, and Featured Era spotlight.",
@@ -623,6 +733,15 @@ export function AdminStudioView() {
       group: "CONTENT",
       count: news.length,
       icon: Newspaper,
+    },
+    {
+      id: "hero",
+      label: "Home Hero Photos",
+      subtitle:
+        "Add, upload, or reorder IVE photos in the swipeable 5-second auto-rotating Home screen banner.",
+      group: "CONTENT",
+      count: heroImagesList.length,
+      icon: ImageIcon,
     },
     {
       id: "seed",
@@ -727,35 +846,47 @@ export function AdminStudioView() {
   const adminInitials = (adminDisplayName || "DA").slice(0, 2).toUpperCase();
 
   // ---------------------------------------------------------------------------
-  // 1. UNAUTHENTICATED VIEW: Apex Admin Sign-In Gate
+  // 1. UNAUTHENTICATED VIEW: M.R.A. Slate-Petrol & Mint/Coral Admin Sign-In Gate
   // ---------------------------------------------------------------------------
   if (!isAdmin) {
     return (
       <div
         className={cn(
-          "flex min-h-screen flex-col justify-between transition-colors selection:bg-[#ff3565] selection:text-white",
+          "flex min-h-screen flex-col justify-between transition-colors selection:bg-[#5ce1b8] selection:text-[#181e24]",
           shellBg,
         )}
       >
         {/* Top System Bar */}
         <header className={cn("flex items-center justify-between border-b px-6 py-3.5", chromeBg)}>
           <div className="flex items-center gap-3">
-            {/* Apex 3D Pink Triangle Prism Logo */}
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-[0_6px_16px_-3px_rgba(255,45,104,0.6)]">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 20h20L12 2zm0 5.8L17.6 18H6.4L12 7.8z" />
+            {/* M.R.A. Dual-Arc Mint & Coral Logo Mark */}
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#181e24] shadow-sm ring-1 ring-white/10">
+              <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+                <path
+                  d="M7 15.5L11.5 20L19 9"
+                  stroke="#5ce1b8"
+                  strokeWidth="2.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M14 5A9 9 0 1 1 6.5 19"
+                  stroke="#e04f67"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
               </svg>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className={cn("text-base font-bold tracking-tight", headingText)}>
+                <span className="text-base font-bold tracking-tight text-white">
                   Dive Archive
                 </span>
-                <span className="rounded bg-[#ff3565]/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#ff3565]">
-                  APEX CMS
+                <span className="rounded-full bg-[#e04f67] px-2 py-0.5 font-mono text-[10px] font-semibold text-white">
+                  CMS
                 </span>
               </div>
-              <p className={cn("text-[11px]", subText)}>
+              <p className="text-[11px] text-[#b4c2ce]">
                 Firestore Content Management &amp; Live Audio Sync Console
               </p>
             </div>
@@ -773,11 +904,11 @@ export function AdminStudioView() {
             >
               {isLight ? (
                 <>
-                  <Moon size={14} className="text-[#ff3565]" /> Dark
+                  <Moon size={14} className="text-[#e04f67]" /> Dark
                 </>
               ) : (
                 <>
-                  <Sun size={14} className="text-[#f5c43d]" /> Light
+                  <Sun size={14} className="text-[#5ce1b8]" /> Light
                 </>
               )}
             </button>
@@ -790,7 +921,7 @@ export function AdminStudioView() {
                 secondaryBtn,
               )}
             >
-              <Eye size={14} className="text-[#1992ff]" />
+              <Eye size={14} className="text-[#5ce1b8]" />
               Preview Fan App
             </button>
           </div>
@@ -798,10 +929,10 @@ export function AdminStudioView() {
 
         {/* Center Sign-In Card */}
         <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
-          <div className={cn("rounded-xl border p-7", panelBg)}>
+          <div className={cn("rounded-2xl border p-7", panelBg)}>
             <div className={cn("mb-6 flex items-center justify-between border-b pb-4", borderClass)}>
               <div className="flex items-center gap-2.5">
-                <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-md">
+                <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#5ce1b8]/15 text-[#5ce1b8] ring-1 ring-[#5ce1b8]/30">
                   <Lock size={16} />
                 </div>
                 <div>
@@ -817,14 +948,14 @@ export function AdminStudioView() {
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-medium",
                   isCloudEnabled
-                    ? "border border-[#13c276]/30 bg-[#13c276]/15 text-[#13c276]"
+                    ? "border border-[#5ce1b8]/30 bg-[#5ce1b8]/15 text-[#5ce1b8]"
                     : "border border-[#f5c43d]/30 bg-[#f5c43d]/15 text-[#f5c43d]",
                 )}
               >
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    isCloudEnabled ? "bg-[#13c276]" : "bg-[#f5c43d]",
+                    isCloudEnabled ? "bg-[#5ce1b8]" : "bg-[#f5c43d]",
                   )}
                 />
                 {isCloudEnabled ? "FIRESTORE ONLINE" : "CONNECTING"}
@@ -862,7 +993,7 @@ export function AdminStudioView() {
                 </div>
 
                 {loginError && (
-                  <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-400">
+                  <div className="flex items-start gap-2 rounded-lg border border-[#e04f67]/30 bg-[#e04f67]/10 p-3 text-xs text-[#e04f67]">
                     <AlertCircle size={14} className="mt-0.5 shrink-0" />
                     <span>{loginError}</span>
                   </div>
@@ -872,7 +1003,7 @@ export function AdminStudioView() {
                   type="submit"
                   disabled={busy}
                   className={cn(
-                    "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
+                    "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
                     primaryBtn,
                   )}
                 >
@@ -887,7 +1018,7 @@ export function AdminStudioView() {
         <footer
           className={cn(
             "border-t px-6 py-3 text-center font-mono text-[11px]",
-            chromeBg,
+            chromeHeaderBg,
             mutedMonoText,
           )}
         >
@@ -898,64 +1029,139 @@ export function AdminStudioView() {
   }
 
   // ---------------------------------------------------------------------------
-  // 2. AUTHENTICATED VIEW: Full Apex Analytics & CMS Workspace
+  // 2. AUTHENTICATED VIEW: M.R.A. Slate-Petrol Sidebar + Charcoal-Slate Workspace
   // ---------------------------------------------------------------------------
   return (
     <div
       className={cn(
-        "flex min-h-screen flex-col font-sans transition-colors selection:bg-[#ff3565] selection:text-white",
+        "flex min-h-screen font-sans transition-colors selection:bg-[#5ce1b8] selection:text-[#181e24]",
         shellBg,
       )}
     >
-      {/* FULL-WIDTH TOP APEX NAVBAR (Logo + Pink Menu Toggle + Global Search + Badges + Avatar) */}
-      <header
+      {/* LEFT PERSISTENT M.R.A. SLATE-PETROL SIDEBAR (`#22303c`) */}
+      <aside
         className={cn(
-          "sticky top-0 z-40 flex h-16 w-full items-center justify-between gap-4 border-b px-5 backdrop-blur-md",
-          chromeHeaderBg,
+          "sticky top-0 flex h-screen w-60 shrink-0 flex-col justify-between border-r",
+          chromeBg,
         )}
       >
-        {/* Left: Apex Brand + Pink Hamburger Collapse Button + Search Bar */}
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => setTab("dashboard")}
-            className="flex items-center gap-2.5 pr-2 text-left"
-          >
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-[0_6px_16px_-3px_rgba(255,45,104,0.65)]">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2L2 20h20L12 2zm0 5.8L17.6 18H6.4L12 7.8z" />
+        <div>
+          {/* M.R.A. Centered Brand Block */}
+          <div className="flex flex-col items-center border-b border-[#2c3c4a] px-5 pt-6 pb-5 text-center">
+            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#18222b] shadow-md ring-1 ring-white/10">
+              <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+                <path
+                  d="M7 15.5L11.5 20L19 9"
+                  stroke="#5ce1b8"
+                  strokeWidth="2.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M14 5A9 9 0 1 1 6.5 19"
+                  stroke="#e04f67"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
               </svg>
             </div>
-            {!sidebarCollapsed && (
-              <div className="hidden sm:block">
-                <span className={cn("text-lg font-bold tracking-tight", headingText)}>
-                  Dive<span className="text-[#ff3565]">.</span>Archive
-                </span>
-              </div>
-            )}
-          </button>
+            <p className="mt-2.5 text-sm font-bold tracking-[0.16em] text-white uppercase">
+              D.I.V.E.
+            </p>
+            <p className="mt-0.5 text-[10px] text-[#9eb0c0]">
+              Archive Studio CMS
+            </p>
+          </div>
 
-          {/* Pink Rounded Square Menu Toggle (matches Apex pink ☰ button) */}
+          {/* M.R.A. Navigation Items (Pure White Active Capsule + Coral-Rose Count Badges) */}
+          <div className="px-3.5 py-5">
+            <nav className="space-y-1.5">
+              {navItems.map(({ id, label, count, icon: Icon }) => {
+                const active = tab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTab(id)}
+                    className={cn(
+                      "group flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-medium transition-all",
+                      active
+                        ? "bg-white text-[#1b242d] font-semibold shadow-[0_6px_18px_-6px_rgba(0,0,0,0.45)]"
+                        : "text-[#c3d0dc] hover:bg-white/10 hover:text-white",
+                    )}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Icon
+                        size={16}
+                        className={active ? "text-[#1b242d]" : "text-[#9eb0c0] group-hover:text-white"}
+                      />
+                      <span className="truncate">{label}</span>
+                    </span>
+
+                    {typeof count === "number" && (
+                      <span
+                        className={cn(
+                          "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[10px] font-bold",
+                          active
+                            ? "bg-[#e04f67] text-white"
+                            : "bg-[#e04f67] text-white shadow-xs",
+                        )}
+                      >
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+
+        {/* M.R.A. Bottom Centered Admin Avatar & Name Block */}
+        <div className="border-t border-[#2c3c4a] px-4 py-5 text-center">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-[#5ce1b8] to-[#22303c] text-sm font-bold text-[#142026] shadow-md ring-2 ring-[#5ce1b8]/50">
+            {adminInitials}
+          </div>
+          <p className="mt-2.5 truncate text-xs font-semibold text-white">
+            {adminDisplayName}
+          </p>
+          <p className="text-[10px] text-[#9eb0c0]">Super Admin</p>
           <button
             type="button"
-            onClick={() => setSidebarCollapsed((prev) => !prev)}
-            title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            className={cn(
-              "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-transform active:scale-95",
-              primaryBtn,
-            )}
+            onClick={() => void signOutAdmin()}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[#334656] bg-[#1b2630] px-3 py-1.5 text-[11px] font-medium text-[#c3d0dc] transition-colors hover:border-[#e04f67] hover:text-white"
           >
-            <Menu size={16} />
+            <LogOut size={12} />
+            Sign Out
           </button>
+        </div>
+      </aside>
 
-          {/* Global Search Input with Live Dropdown */}
+      {/* MAIN CONTENT SHELL */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* TOP M.R.A. HEADER (Page Title + Centered Recessed Search + Right Controls) */}
+        <header
+          className={cn(
+            "sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4 backdrop-blur-md",
+            chromeHeaderBg,
+          )}
+        >
+          {/* Left: Current Section Title */}
+          <div>
+            <h1 className={cn("text-lg font-semibold tracking-tight", headingText)}>
+              {activeNavMeta.label}
+            </h1>
+            <p className={cn("text-[11px]", subText)}>{activeNavMeta.subtitle}</p>
+          </div>
+
+          {/* Center: M.R.A. Recessed Pill Search Bar */}
           <div className="relative hidden md:block">
             <div
               className={cn(
-                "flex w-64 items-center gap-2 rounded-md border px-3 py-1.5 lg:w-72",
+                "flex w-72 items-center gap-2.5 rounded-xl border px-3.5 py-2 lg:w-80",
                 isLight
-                  ? "border-[#d5dcf4] bg-[#f4f6fd]"
-                  : "border-[#2c3778] bg-[#161c42]",
+                  ? "border-[#d5dde6] bg-[#f3f5f8]"
+                  : "border-[#2e3a46] bg-[#252e37]",
               )}
             >
               <Search size={14} className={subText} />
@@ -967,7 +1173,7 @@ export function AdminStudioView() {
                 className={cn(
                   "w-full bg-transparent text-xs outline-none",
                   headingText,
-                  isLight ? "placeholder:text-[#8992c2]" : "placeholder:text-[#6f7bb6]",
+                  isLight ? "placeholder:text-[#8a99a8]" : "placeholder:text-[#7a8999]",
                 )}
               />
               {globalSearch && (
@@ -984,7 +1190,7 @@ export function AdminStudioView() {
             {globalSearchResults.length > 0 && (
               <div
                 className={cn(
-                  "absolute top-full left-0 z-50 mt-1.5 w-80 overflow-hidden rounded-lg border shadow-2xl",
+                  "absolute top-full left-0 z-50 mt-1.5 w-80 overflow-hidden rounded-xl border shadow-2xl",
                   panelBg,
                 )}
               >
@@ -1005,7 +1211,7 @@ export function AdminStudioView() {
                         </p>
                         <p className={cn("truncate text-[10px]", subText)}>{res.sub}</p>
                       </div>
-                      <span className="shrink-0 rounded bg-[#ff3565]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[#ff3565]">
+                      <span className="shrink-0 rounded-md bg-[#c9c4f6]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[#c9c4f6]">
                         {res.kind}
                       </span>
                     </button>
@@ -1014,256 +1220,169 @@ export function AdminStudioView() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Right: Apex Circular Badge Icons + Push Live + Admin Profile Avatar */}
-        <div className="flex items-center gap-2.5">
-          {/* Light / Dark Mode Circular Button */}
-          <button
-            type="button"
-            onClick={toggleColorMode}
-            title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
-            className={cn(
-              "relative grid h-9 w-9 place-items-center rounded-full border transition-colors",
-              secondaryBtn,
-            )}
-          >
-            {isLight ? (
-              <Moon size={15} className="text-[#ff3565]" />
-            ) : (
-              <Sun size={15} className="text-[#f5c43d]" />
-            )}
-          </button>
-
-          {/* Audio Linked Count Circular Badge (matches Apex green badge icon) */}
-          <button
-            type="button"
-            onClick={() => setTab("tracks")}
-            title={`${tracksWithAudioCount} songs linked with audio`}
-            className={cn(
-              "relative grid h-9 w-9 place-items-center rounded-full border transition-colors",
-              secondaryBtn,
-            )}
-          >
-            <Volume2 size={15} />
-            <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#13c276] px-1 text-[9px] font-bold text-white shadow-xs">
-              {tracksWithAudioCount}
-            </span>
-          </button>
-
-          {/* Staged Changes Circular Badge (matches Apex pink badge icon) */}
-          <button
-            type="button"
-            onClick={() => {
-              if (pendingCount > 0) {
-                void handlePushLive();
-              } else {
-                setTab("seed");
-              }
-            }}
-            title={
-              pendingCount > 0
-                ? `${pendingCount} staged changes ready to push live`
-                : "0 staged changes"
-            }
-            className={cn(
-              "relative grid h-9 w-9 place-items-center rounded-full border transition-colors",
-              secondaryBtn,
-            )}
-          >
-            <Rocket size={15} />
-            <span className="absolute -top-1 -right-1 grid h-4 min-w-4 place-items-center rounded-full bg-[#ff3565] px-1 text-[9px] font-bold text-white shadow-xs">
-              {pendingCount}
-            </span>
-          </button>
-
-          {/* Preview Fan App Button */}
-          <button
-            type="button"
-            onClick={() => setPreviewingFanApp(true)}
-            className={cn(
-              "hidden items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:inline-flex",
-              secondaryBtn,
-            )}
-          >
-            <Eye size={14} className="text-[#1992ff]" />
-            <span>Preview App</span>
-          </button>
-
-          {/* Discard All Staged Button */}
-          {pendingCount > 0 && (
+          {/* Right: M.R.A. Theme Toggle Pill + Preview App + Push Live */}
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
-              disabled={busy}
-              onClick={clearAllStagedChanges}
+              onClick={toggleColorMode}
+              title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
               className={cn(
-                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors hover:border-[#ff3565] hover:text-[#ff3565]",
+                "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition-colors",
                 secondaryBtn,
               )}
             >
-              <RotateCcw size={13} />
-              <span className="hidden lg:inline">Discard ({pendingCount})</span>
+              {isLight ? (
+                <>
+                  <Moon size={14} className="text-[#22303c]" />
+                  <span>Dark</span>
+                </>
+              ) : (
+                <>
+                  <Sun size={14} className="text-[#5ce1b8]" />
+                  <span>Light</span>
+                </>
+              )}
             </button>
-          )}
 
-          {/* Primary Push Live Button */}
-          <button
-            type="button"
-            disabled={busy || pendingCount === 0}
-            onClick={() => void handlePushLive()}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-all",
-              pendingCount > 0
-                ? primaryBtn
-                : isLight
-                  ? "cursor-not-allowed border border-[#dce2f7] bg-[#f4f6fd] text-[#9aa5d9]"
-                  : "cursor-not-allowed border border-[#2c3778] bg-[#181f4a] text-[#6f7bb6]",
-            )}
-          >
-            <Rocket size={13} />
-            <span>
-              {busy ? "Deploying..." : `Push Live (${pendingCount})`}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setPreviewingFanApp(true)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-medium transition-colors",
+                secondaryBtn,
+              )}
+            >
+              <Eye size={14} className="text-[#5ce1b8]" />
+              <span>Preview Fan App</span>
+            </button>
 
-          {/* Admin Avatar + Name + Role + Sign Out (matches Apex top-right profile chip) */}
-          <div
-            className={cn(
-              "ml-1 flex items-center gap-2.5 border-l pl-3",
-              borderClass,
+            {pendingCount > 0 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={clearAllStagedChanges}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-xl border px-3 py-2 text-xs font-medium transition-colors hover:border-[#e04f67] hover:text-[#e04f67]",
+                  secondaryBtn,
+                )}
+              >
+                <RotateCcw size={13} />
+                <span>Discard ({pendingCount})</span>
+              </button>
             )}
-          >
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#ff3d71] to-[#a845ff] text-xs font-bold text-white shadow-sm ring-2 ring-[#ff3565]/40">
-              {adminInitials}
-            </div>
-            <div className="hidden text-left xl:block">
-              <p className={cn("max-w-[120px] truncate text-xs font-semibold", headingText)}>
-                {adminDisplayName}
+
+            <button
+              type="button"
+              disabled={busy || pendingCount === 0}
+              onClick={() => void handlePushLive()}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all",
+                pendingCount > 0
+                  ? primaryBtn
+                  : isLight
+                    ? "cursor-not-allowed border border-[#dfe5ec] bg-[#eef2f6] text-[#8a99a8]"
+                    : "cursor-not-allowed border border-[#2a343e] bg-[#222a32] text-[#6e7d8c]",
+              )}
+            >
+              <Rocket size={13} />
+              <span>
+                {busy ? "Deploying..." : `Push Live Changes (${pendingCount})`}
+              </span>
+            </button>
+          </div>
+        </header>
+
+        {/* WORKSPACE BODY */}
+        <main className="mx-auto w-full max-w-[1440px] min-w-0 flex-1 space-y-6 p-6">
+          {/* M.R.A. 4-CARD KPI OVERVIEW STRIP (Unified Slate Surface Across All 4 Cards) */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Card 1: Discography Catalog */}
+            <div className={cn("rounded-2xl border p-4", panelBg)}>
+              <div className="flex items-center justify-between">
+                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
+                  Discography Catalog
+                </span>
+                <Disc3 size={15} className="text-[#e04f67]" />
+              </div>
+              <p className={cn("mt-2 text-2xl font-bold tracking-tight", headingText)}>
+                {albums.length}{" "}
+                <span className={cn("text-xs font-normal", subText)}>releases</span>
               </p>
-              <p className={cn("text-[10px]", subText)}>Admin</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void signOutAdmin()}
-              title="Sign out of Admin CMS"
-              className={cn(
-                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors hover:border-[#ff3565] hover:text-[#ff3565]",
-                secondaryBtn,
-              )}
-            >
-              <LogOut size={13} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* BODY BELOW TOP NAVBAR: COLLAPSIBLE LEFT SIDEBAR + MAIN WORKSPACE */}
-      <div className="flex min-h-[calc(100vh-4rem)] flex-1">
-        {/* LEFT PERSISTENT APEX SIDEBAR */}
-        <aside
-          className={cn(
-            "sticky top-16 flex h-[calc(100vh-4rem)] shrink-0 flex-col justify-between border-r transition-all duration-200",
-            chromeBg,
-            sidebarCollapsed ? "w-[74px]" : "w-60",
-          )}
-        >
-          <div className="overflow-y-auto px-2.5 py-4">
-            <nav className="space-y-1.5">
-              {navItems.map(({ id, label, count, icon: Icon }) => {
-                const active = tab === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setTab(id)}
-                    title={label}
-                    className={cn(
-                      "group flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition-all",
-                      active
-                        ? isLight
-                          ? "bg-[#eef1fb] text-[#1e2554] font-semibold"
-                          : "bg-[#26306e] text-white font-semibold"
-                        : isLight
-                          ? "text-[#5e689e] hover:bg-[#f4f6fd] hover:text-[#1e2554]"
-                          : "text-[#a6b0e3] hover:bg-[#232d66]/70 hover:text-white",
-                    )}
-                  >
-                    <span className="flex items-center gap-3">
-                      {/* Apex signature: Active item gets glowing pink-rose gradient square icon chip! */}
-                      <span
-                        className={cn(
-                          "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-all",
-                          active
-                            ? "bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-[0_4px_14px_rgba(255,53,101,0.55)]"
-                            : isLight
-                              ? "text-[#5e689e] group-hover:text-[#1e2554]"
-                              : "text-[#8d97cc] group-hover:text-white",
-                        )}
-                      >
-                        <Icon size={16} />
-                      </span>
-                      {!sidebarCollapsed && <span className="truncate">{label}</span>}
-                    </span>
-
-                    {!sidebarCollapsed && (
-                      <span className="flex items-center gap-1.5">
-                        {typeof count === "number" && (
-                          <span
-                            className={cn(
-                              "rounded px-1.5 py-0.5 font-mono text-[10px]",
-                              active
-                                ? "bg-[#ff3565]/20 text-[#ff3565]"
-                                : badgeNeutral,
-                            )}
-                          >
-                            {count}
-                          </span>
-                        )}
-                        <ChevronRight
-                          size={13}
-                          className={cn(
-                            "transition-transform",
-                            active
-                              ? "translate-x-0.5 text-[#ff3565]"
-                              : mutedMonoText,
-                          )}
-                        />
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-
-          {/* Sidebar Bottom Firestore Live Status Footer */}
-          {!sidebarCollapsed && (
-            <div className={cn("border-t p-3.5", borderClass)}>
-              <div className={cn("rounded-lg border p-2.5", subPanelBg)}>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-[#13c276]" />
-                  <span className={cn("text-[11px] font-semibold", headingText)}>
-                    Firestore Production
-                  </span>
-                </div>
-                <p className={cn("mt-0.5 text-[10px]", subText)}>
-                  {albums.length} albums · {tracks.length} songs synced
-                </p>
+              <div className={cn("mt-2 flex items-center gap-2 font-mono text-[11px]", mutedMonoText)}>
+                <span className="inline-block h-2.5 w-1 rounded-full bg-[#5ce1b8]" />
+                <span>
+                  {heroImagesList.length} hero photos · {members.length} members
+                </span>
               </div>
             </div>
-          )}
-        </aside>
 
-        {/* MAIN CONTENT SHELL */}
-        <main className="mx-auto w-full max-w-[1440px] min-w-0 flex-1 space-y-5 p-6">
-          {/* APEX PAGE TITLE & SUBTITLE HEADER */}
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h1 className={cn("text-xl font-semibold tracking-tight", headingText)}>
-                {activeNavMeta.label}
-              </h1>
-              <p className={cn("mt-0.5 text-xs", subText)}>
-                {activeNavMeta.subtitle}
+            {/* Card 2: Audio & YouTube Index (Mint-Aqua Accent) */}
+            <div className={cn("rounded-2xl border p-4", panelBg)}>
+              <div className="flex items-center justify-between">
+                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
+                  Audio &amp; YouTube Index
+                </span>
+                <Volume2 size={15} className="text-[#5ce1b8]" />
+              </div>
+              <p className={cn("mt-2 text-2xl font-bold tracking-tight", headingText)}>
+                {tracks.length} <span className={cn("text-xs font-normal", subText)}>tracks</span>
+              </p>
+              <p className={cn("mt-2 font-mono text-[11px]", mutedMonoText)}>
+                <span className="text-[#5ce1b8]">{tracksWithAudioCount} audio linked</span> ·{" "}
+                {tracks.filter((t) => t.lyricsAvailable).length} with lyrics
+              </p>
+            </div>
+
+            {/* Card 3: Active Featured Spotlight (Soft Lavender Accent) */}
+            <div className={cn("rounded-2xl border p-4", panelBg)}>
+              <div className="flex items-center justify-between">
+                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
+                  Active Featured Spotlight
+                </span>
+                <Star size={15} className="text-[#c9c4f6]" />
+              </div>
+              <p className={cn("mt-2 truncate text-base font-semibold", headingText)}>
+                {activeFeaturedAlbum?.title ?? "None"}
+              </p>
+              <p className="mt-2 truncate font-mono text-[11px] text-[#c9c4f6]">
+                Song: {activeFeaturedTrack?.title ?? "None"}
+              </p>
+            </div>
+
+            {/* Card 4: Staged Deployment Queue (Coral-Rose / Mint-Aqua) */}
+            <div
+              className={cn(
+                "rounded-2xl border p-4 transition-colors",
+                pendingCount > 0
+                  ? "border-[#e04f67]/50 bg-[#e04f67]/12"
+                  : panelBg,
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  className={cn(
+                    "font-mono text-[10px] font-semibold uppercase tracking-wider",
+                    pendingCount > 0 ? "text-[#e04f67]" : subText,
+                  )}
+                >
+                  Staged Deployment Queue
+                </span>
+                <Activity
+                  size={15}
+                  className={pendingCount > 0 ? "text-[#e04f67]" : "text-[#5ce1b8]"}
+                />
+              </div>
+              <p className={cn("mt-2 text-2xl font-bold tracking-tight", headingText)}>
+                {pendingCount}{" "}
+                <span className={cn("text-xs font-normal", subText)}>
+                  {pendingCount === 1 ? "pending change" : "pending changes"}
+                </span>
+              </p>
+              <p className={cn("mt-2 font-mono text-[11px]", subText)}>
+                {pendingCount > 0
+                  ? "Ready to batch commit to Firestore"
+                  : "All collections synced with production"}
               </p>
             </div>
           </div>
@@ -1272,19 +1391,19 @@ export function AdminStudioView() {
           {changes.length > 0 && (
             <div
               className={cn(
-                "rounded-lg border p-4",
+                "rounded-2xl border p-4",
                 isLight
-                  ? "border-amber-300 bg-amber-50/90"
-                  : "border-[#f5c43d]/40 bg-[#25285a]",
+                  ? "border-[#e04f67]/40 bg-[#fff5f7]"
+                  : "border-[#e04f67]/40 bg-[#241d23]",
               )}
             >
               <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b pb-3", borderClass)}>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex h-2 w-2 rounded-full bg-[#f5c43d]" />
+                  <span className="inline-flex h-2 w-2 rounded-full bg-[#e04f67]" />
                   <h2
                     className={cn(
                       "text-xs font-semibold uppercase tracking-wider",
-                      isLight ? "text-amber-900" : "text-[#f5c43d]",
+                      isLight ? "text-[#b83248]" : "text-[#ff8fa0]",
                     )}
                   >
                     Staged Changes Queue ({changes.length})
@@ -1299,7 +1418,7 @@ export function AdminStudioView() {
                   <div
                     key={c.key}
                     className={cn(
-                      "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
+                      "inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs",
                       subPanelBg,
                     )}
                   >
@@ -1307,8 +1426,8 @@ export function AdminStudioView() {
                       className={cn(
                         "rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase",
                         c.action === "delete"
-                          ? "bg-[#ff3565]/20 text-[#ff3565]"
-                          : "bg-[#13c276]/20 text-[#13c276]",
+                          ? "bg-[#e04f67]/20 text-[#e04f67]"
+                          : "bg-[#5ce1b8]/20 text-[#5ce1b8]",
                       )}
                     >
                       {c.action === "delete" ? "DELETE" : "UPSERT"}
@@ -1318,7 +1437,7 @@ export function AdminStudioView() {
                       type="button"
                       onClick={() => discardStagedChange(c)}
                       aria-label={`Discard ${c.label}`}
-                      className={cn("ml-1 rounded p-0.5 hover:text-[#ff3565]", subText)}
+                      className={cn("ml-1 rounded p-0.5 hover:text-[#e04f67]", subText)}
                     >
                       <X size={12} />
                     </button>
@@ -1330,36 +1449,19 @@ export function AdminStudioView() {
 
           {/* STATUS TOAST BANNER */}
           {status && (
-            <div className="flex items-center justify-between rounded-lg border border-[#ff3565]/40 bg-[#ff3565]/15 px-4 py-3 text-xs text-white">
+            <div className="flex items-center justify-between rounded-xl border border-[#5ce1b8]/40 bg-[#5ce1b8]/12 px-4 py-3 text-xs">
               <div className="flex items-center gap-2.5">
-                <CheckCircle2 size={16} className="shrink-0 text-[#ff3565]" />
+                <CheckCircle2 size={16} className="shrink-0 text-[#5ce1b8]" />
                 <span className={cn("font-medium", headingText)}>{status}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setStatus(null)}
-                className="text-[#ff3565] hover:opacity-80"
+                className="text-[#5ce1b8] hover:opacity-80"
               >
                 <X size={14} />
               </button>
             </div>
-          )}
-
-          {/* ================================================================= */}
-          {/* TAB 0: APEX ANALYTICS DASHBOARD OVERVIEW                          */}
-          {/* ================================================================= */}
-          {tab === "dashboard" && (
-            <AdminDashboardOverview
-              albums={albums}
-              tracks={tracks}
-              members={members}
-              news={news}
-              pendingCount={pendingCount}
-              isLight={isLight}
-              theme={theme}
-              onNavigateTab={(targetTab) => setTab(targetTab)}
-              onInspectAlbum={(album) => loadAlbumIntoForm(album)}
-            />
           )}
 
           {/* ================================================================= */}
@@ -1442,7 +1544,7 @@ export function AdminStudioView() {
                               className={cn(
                                 "inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors",
                                 isEditing
-                                  ? "border-[#ff3565] bg-[#ff3565] text-white"
+                                  ? "border-[#5ce1b8] bg-[#5ce1b8] text-[#142026] font-semibold"
                                   : secondaryBtn,
                               )}
                             >
@@ -1492,7 +1594,7 @@ export function AdminStudioView() {
                 >
                   <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
                     <div className="flex items-center gap-2">
-                      <FolderKanban size={16} className="text-[#ff3565]" />
+                      <FolderKanban size={16} className="text-[#5ce1b8]" />
                       <div>
                         <h3 className={cn("text-sm font-semibold", headingText)}>
                           {editingAlbumId ? "Edit Album Record" : "Create New Album"}
@@ -1773,30 +1875,30 @@ export function AdminStudioView() {
                                         "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase",
                                         isItunes
                                           ? "border-[#f5c43d]/40 bg-[#f5c43d]/15 text-[#f5c43d]"
-                                          : "border-[#13c276]/30 bg-[#13c276]/15 text-[#13c276]",
+                                          : "border-[#5ce1b8]/35 bg-[#5ce1b8]/15 text-[#5ce1b8]",
                                       )}
                                     >
                                       {isItunes ? "⚠ 30s iTunes Preview" : "⚡ Full Direct Audio"}
                                     </span>
                                   )}
                                   {ytId && (
-                                    <span className="inline-flex items-center gap-1 rounded border border-[#ff3565]/30 bg-[#ff3565]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#ff3565]">
+                                    <span className="inline-flex items-center gap-1 rounded border border-[#e04f67]/35 bg-[#e04f67]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#e04f67]">
                                       <Play size={8} className="fill-current" />
                                       YT: {ytId}
                                     </span>
                                   )}
                                   {t.isTitleTrack && (
-                                    <span className="rounded bg-[#1992ff]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#1992ff]">
+                                    <span className="rounded bg-[#c9c4f6]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#c9c4f6]">
                                       Title
                                     </span>
                                   )}
                                   {t.isSolo && (
-                                    <span className="rounded bg-[#a845ff]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#a845ff]">
+                                    <span className="rounded bg-[#c9c4f6]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#c9c4f6]">
                                       Solo · {t.artist}
                                     </span>
                                   )}
                                   {t.lyricsAvailable && (
-                                    <span className="rounded bg-[#13c276]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#13c276]">
+                                    <span className="rounded bg-[#5ce1b8]/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#5ce1b8]">
                                       Lyrics
                                     </span>
                                   )}
@@ -1823,8 +1925,8 @@ export function AdminStudioView() {
                                   className={cn(
                                     "inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition-colors",
                                     isItunes
-                                      ? "border-[#ff3565]/40 bg-[#ff3565]/15 text-[#ff3565] hover:bg-[#ff3565]/25"
-                                      : cn(secondaryBtn, "hover:border-[#ff3565] hover:text-[#ff3565]"),
+                                      ? "border-[#e04f67]/40 bg-[#e04f67]/15 text-[#e04f67] hover:bg-[#e04f67]/25"
+                                      : cn(secondaryBtn, "hover:border-[#e04f67] hover:text-[#e04f67]"),
                                   )}
                                 >
                                   <Unlink size={12} />
@@ -1837,7 +1939,7 @@ export function AdminStudioView() {
                                 className={cn(
                                   "inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors",
                                   isEditing
-                                    ? "border-[#ff3565] bg-[#ff3565] text-white"
+                                    ? "border-[#5ce1b8] bg-[#5ce1b8] text-[#142026] font-semibold"
                                     : secondaryBtn,
                                 )}
                               >
@@ -1887,7 +1989,7 @@ export function AdminStudioView() {
                 >
                   <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
                     <div className="flex items-center gap-2">
-                      <ListMusic size={16} className="text-[#ff3565]" />
+                      <ListMusic size={16} className="text-[#5ce1b8]" />
                       <div>
                         <h3 className={cn("text-sm font-semibold", headingText)}>
                           {editingTrackId ? "Edit Track, Audio & Lyrics" : "Add Track to Release"}
@@ -1940,7 +2042,7 @@ export function AdminStudioView() {
                   {/* Manual Full-Song Direct Cloud Audio & YouTube Stream Box */}
                   <div className={cn("space-y-3 rounded-lg border p-3.5", subPanelBg)}>
                     <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#ff3565]">
+                      <span className="flex items-center gap-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#5ce1b8]">
                         <Volume2 size={13} /> Manual Full-Song Audio Source
                       </span>
                       <div className="flex items-center gap-1.5">
@@ -1950,7 +2052,7 @@ export function AdminStudioView() {
                               "rounded px-2 py-0.5 font-mono text-[10px] font-semibold",
                               isItunesPreviewUrl(trackAudioUrl)
                                 ? "bg-[#f5c43d]/15 text-[#f5c43d]"
-                                : "bg-[#13c276]/15 text-[#13c276]",
+                                : "bg-[#5ce1b8]/15 text-[#5ce1b8]",
                             )}
                           >
                             {isItunesPreviewUrl(trackAudioUrl)
@@ -1959,7 +2061,7 @@ export function AdminStudioView() {
                           </span>
                         )}
                         {parsedYoutubeIdPreview && (
-                          <span className="rounded bg-[#ff3565]/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#ff3565]">
+                          <span className="rounded bg-[#e04f67]/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#e04f67]">
                             ✓ YT ID: {parsedYoutubeIdPreview}
                           </span>
                         )}
@@ -1971,8 +2073,8 @@ export function AdminStudioView() {
                       className={cn(
                         "flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-xs font-semibold transition-colors",
                         uploadingAudio
-                          ? "border-[#ff3565] bg-[#ff3565]/15 text-[#ff3565]"
-                          : "border-[#ff3565]/40 bg-[#ff3565]/10 text-[#ff3565] hover:bg-[#ff3565]/20",
+                          ? "border-[#5ce1b8] bg-[#5ce1b8]/15 text-[#5ce1b8]"
+                          : "border-[#5ce1b8]/40 bg-[#5ce1b8]/10 text-[#5ce1b8] hover:bg-[#5ce1b8]/20",
                       )}
                     >
                       <Upload size={14} />
@@ -2106,7 +2208,7 @@ export function AdminStudioView() {
                           type="checkbox"
                           checked={trackIsTitle}
                           onChange={(e) => setTrackIsTitle(e.target.checked)}
-                          className="accent-[#ff3565]"
+                          className="accent-[#5ce1b8]"
                         />
                         Mark as Title Track
                       </label>
@@ -2199,7 +2301,7 @@ export function AdminStudioView() {
                                 0{idx + 1}
                               </span>
                             </div>
-                            <p className="mt-0.5 truncate text-xs text-[#ff3565]">{m.position}</p>
+                            <p className="mt-0.5 truncate text-xs text-[#5ce1b8]">{m.position}</p>
                             <p className={cn("mt-0.5 font-mono text-[10px]", mutedMonoText)}>
                               {m.birthday ?? `b. ${m.birthYear}`} · {(m.facts ?? []).length} archive
                               notes
@@ -2233,7 +2335,7 @@ export function AdminStudioView() {
                           <h3 className={cn("text-base font-semibold", headingText)}>
                             {memberName || "Member"} Profile Dossier
                           </h3>
-                          <span className="rounded bg-[#ff3565]/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#ff3565]">
+                          <span className="rounded bg-[#c9c4f6]/20 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#c9c4f6]">
                             ID: {selectedMemberId}
                           </span>
                         </div>
@@ -2436,7 +2538,7 @@ export function AdminStudioView() {
                               className={cn(
                                 "inline-flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors",
                                 isEditing
-                                  ? "border-[#ff3565] bg-[#ff3565] text-white"
+                                  ? "border-[#5ce1b8] bg-[#5ce1b8] text-[#142026] font-semibold"
                                   : secondaryBtn,
                               )}
                             >
@@ -2473,7 +2575,7 @@ export function AdminStudioView() {
                 >
                   <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
                     <div className="flex items-center gap-2">
-                      <FileText size={16} className="text-[#ff3565]" />
+                      <FileText size={16} className="text-[#5ce1b8]" />
                       <div>
                         <h3 className={cn("text-sm font-semibold", headingText)}>
                           {editingNewsId ? "Edit News Dispatch" : "Create News Dispatch"}
@@ -2602,14 +2704,319 @@ export function AdminStudioView() {
           )}
 
           {/* ================================================================= */}
-          {/* TAB 5: DATABASE & SEEDING OPERATIONS                              */}
+          {/* TAB 5: HOME HERO PHOTOS (Swipeable 5s Auto-Rotating Banner)       */}
+          {/* ================================================================= */}
+          {tab === "hero" && (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+              {/* Left 7 Cols: Active Home Screen Hero Carousel Slides */}
+              <div className="lg:col-span-7">
+                <div className={cn("overflow-hidden rounded-xl border", panelBg)}>
+                  <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5", borderClass)}>
+                    <div>
+                      <h2 className={cn("text-sm font-semibold", headingText)}>
+                        Active Home Screen Hero Slides ({heroImagesList.length})
+                      </h2>
+                      <p className={cn("text-xs", subText)}>
+                        These IVE photos rotate automatically every 5 seconds and can be swiped left
+                        or right on the Home screen.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleResetDefaultHeroPhotos}
+                      className={cn(
+                        "rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                        secondaryBtn,
+                      )}
+                    >
+                      Restore Default Slides
+                    </button>
+                  </div>
+
+                  <div className={cn("divide-y", dividerClass)}>
+                    {heroImagesList.map((imgUrl, idx) => (
+                      <div
+                        key={`${imgUrl}-${idx}`}
+                        className={cn(
+                          "flex items-center justify-between gap-4 px-5 py-3.5 transition-colors",
+                          rowHover,
+                        )}
+                      >
+                        <div className="flex min-w-0 flex-1 items-center gap-4">
+                          <div
+                            className={cn(
+                              "relative h-16 w-24 shrink-0 overflow-hidden rounded-lg border",
+                              borderClass,
+                            )}
+                          >
+                            <img
+                              src={imgUrl}
+                              alt={`Home hero slide ${idx + 1}`}
+                              className="h-full w-full object-cover object-center"
+                            />
+                            <span className="absolute top-1 left-1 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[9px] font-bold text-[#5ce1b8]">
+                              0{idx + 1}
+                            </span>
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className={cn("text-sm font-semibold", headingText)}>
+                                Hero Banner Slide #{idx + 1}
+                              </p>
+                              {idx === 0 && (
+                                <span className="rounded bg-[#5ce1b8]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#5ce1b8]">
+                                  Lead Slide
+                                </span>
+                              )}
+                            </div>
+                            <p className={cn("mt-1 truncate font-mono text-[11px]", subText)}>
+                              {imgUrl}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSetWelcomePhotoUrl(imgUrl)}
+                            title="Use this photo on the Welcome Tour (Slide 1)"
+                            className={cn(
+                              "inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors",
+                              activeWelcomePhoto === imgUrl
+                                ? "border-[#5ce1b8] bg-[#5ce1b8]/15 text-[#5ce1b8]"
+                                : secondaryBtn,
+                            )}
+                          >
+                            <Sparkles size={11} />
+                            {activeWelcomePhoto === imgUrl ? "Welcome Pic" : "Set Welcome"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => handleMoveHeroPhoto(idx, -1)}
+                            title="Move slide earlier"
+                            className={cn(
+                              "inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors disabled:opacity-35",
+                              secondaryBtn,
+                            )}
+                          >
+                            <ArrowUp size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === heroImagesList.length - 1}
+                            onClick={() => handleMoveHeroPhoto(idx, 1)}
+                            title="Move slide later"
+                            className={cn(
+                              "inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors disabled:opacity-35",
+                              secondaryBtn,
+                            )}
+                          >
+                            <ArrowDown size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveHeroPhoto(idx)}
+                            title="Remove slide"
+                            className={cn(
+                              "inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors hover:border-[#e04f67] hover:bg-[#e04f67]/15 hover:text-[#e04f67]",
+                              secondaryBtn,
+                            )}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right 5 Cols: Add / Upload New IVE Home Hero Photo + Welcome Tour Cover Photo */}
+              <div className="space-y-5 lg:col-span-5">
+                <form
+                  onSubmit={handleAddHeroPhotoUrl}
+                  className={cn("space-y-4 rounded-xl border p-5", panelBg)}
+                >
+                  <div className={cn("flex items-center gap-2 border-b pb-3.5", borderClass)}>
+                    <ImageIcon size={16} className="text-[#5ce1b8]" />
+                    <div>
+                      <h3 className={cn("text-sm font-semibold", headingText)}>
+                        Add IVE Photo to Home Screen Carousel
+                      </h3>
+                      <p className={cn("font-mono text-[10px]", subText)}>
+                        Upload from computer or paste any direct image URL
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Method 1: Upload Photo File from Computer */}
+                  <div className={cn("space-y-2.5 rounded-xl border p-3.5", subPanelBg)}>
+                    <span className="block font-mono text-[10px] font-semibold uppercase tracking-wider text-[#5ce1b8]">
+                      Method 1: Upload Image File from Computer
+                    </span>
+                    <label
+                      className={cn(
+                        "flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors",
+                        uploadingHero
+                          ? "border-[#5ce1b8] bg-[#5ce1b8]/15 text-[#5ce1b8]"
+                          : "border-[#5ce1b8]/45 bg-[#5ce1b8]/10 text-[#5ce1b8] hover:bg-[#5ce1b8]/20",
+                      )}
+                    >
+                      <Upload size={14} />
+                      <span>
+                        {uploadingHero
+                          ? `Uploading Photo to Firebase Storage (${heroUploadProgress}%)...`
+                          : "Upload .JPG / .PNG / .WEBP Photo from Computer"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingHero}
+                        onChange={(e) => void handleHeroFileUpload(e)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Method 2: Paste Direct Image URL */}
+                  <div>
+                    <label className={labelClass}>
+                      Method 2: Direct Image URL (.jpg, .png, .webp)
+                    </label>
+                    <input
+                      type="url"
+                      required
+                      value={newHeroUrl}
+                      onChange={(e) => setNewHeroUrl(e.target.value)}
+                      placeholder="https://..."
+                      className={inputClass}
+                    />
+                  </div>
+
+                  {newHeroUrl.trim() && (
+                    <div className={cn("flex items-center gap-3 rounded-xl border p-2.5", subPanelBg)}>
+                      <div className={cn("h-14 w-20 shrink-0 overflow-hidden rounded-lg border", borderClass)}>
+                        <img
+                          src={newHeroUrl}
+                          alt="New hero preview"
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono text-[10px] font-semibold uppercase text-[#5ce1b8]">
+                          Slide Preview Ready
+                        </p>
+                        <p className={cn("truncate font-mono text-[10px]", subText)}>
+                          {newHeroUrl}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className={cn(
+                      "inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all",
+                      primaryBtn,
+                    )}
+                  >
+                    <Plus size={14} />
+                    Stage Photo to Home Carousel
+                  </button>
+                </form>
+
+                {/* Welcome Tour Cover Photo (Slide 1) Inspector Box */}
+                <div className={cn("space-y-4 rounded-xl border p-5", panelBg)}>
+                  <div className={cn("flex items-center gap-2 border-b pb-3.5", borderClass)}>
+                    <Sparkles size={16} className="text-[#c9c4f6]" />
+                    <div>
+                      <h3 className={cn("text-sm font-semibold", headingText)}>
+                        Welcome Tour Cover Photo (Slide 1)
+                      </h3>
+                      <p className={cn("font-mono text-[10px]", subText)}>
+                        Displayed inside the glowing frame on the &quot;Welcome to the Archive&quot; page
+                      </p>
+                    </div>
+                  </div>
+
+                  {activeWelcomePhoto && (
+                    <div className={cn("flex items-center gap-3.5 rounded-xl border p-3", subPanelBg)}>
+                      <div className={cn("h-16 w-16 shrink-0 overflow-hidden rounded-xl border", borderClass)}>
+                        <img
+                          src={activeWelcomePhoto}
+                          alt="Welcome tour cover"
+                          className="h-full w-full object-cover object-center"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="rounded bg-[#c9c4f6]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-[#c9c4f6]">
+                          Active Welcome Tour Photo
+                        </span>
+                        <p className={cn("mt-1 truncate font-mono text-[10px]", subText)}>
+                          {activeWelcomePhoto}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <label
+                    className={cn(
+                      "flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors",
+                      uploadingWelcomePhoto
+                        ? "border-[#c9c4f6] bg-[#c9c4f6]/15 text-[#c9c4f6]"
+                        : "border-[#c9c4f6]/45 bg-[#c9c4f6]/10 text-[#c9c4f6] hover:bg-[#c9c4f6]/20",
+                    )}
+                  >
+                    <Upload size={14} />
+                    <span>
+                      {uploadingWelcomePhoto
+                        ? "Uploading Welcome Photo..."
+                        : "Upload Welcome Tour Photo from Computer"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={uploadingWelcomePhoto}
+                      onChange={(e) => void handleWelcomePhotoFileUpload(e)}
+                      className="sr-only"
+                    />
+                  </label>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={welcomePhotoInput}
+                      onChange={(e) => setWelcomePhotoInput(e.target.value)}
+                      placeholder="Or paste direct image URL for Welcome Tour..."
+                      className={inputClass}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSetWelcomePhotoUrl(welcomePhotoInput)}
+                      className={cn(
+                        "shrink-0 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all",
+                        primaryBtn,
+                      )}
+                    >
+                      Stage
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* TAB 6: DATABASE & SEEDING OPERATIONS                              */}
           {/* ================================================================= */}
           {tab === "seed" && (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
               <div className="lg:col-span-7">
                 <div className={cn("rounded-xl border p-6", panelBg)}>
                   <div className="flex items-start gap-3.5">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-[#ff3d71] to-[#ff2662] text-white shadow-md">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#5ce1b8]/15 text-[#5ce1b8] ring-1 ring-[#5ce1b8]/30">
                       <Database size={18} />
                     </div>
                     <div>
@@ -2620,7 +3027,7 @@ export function AdminStudioView() {
                         Synchronize or restore the baseline IVE catalog from the verified local
                         bundled dataset directly into your Cloud Firestore collections (
                         <code>albums</code>, <code>tracks</code>, <code>members</code>,{" "}
-                        <code>news</code>, and <code>appConfig/home</code>).
+                        <code>news</code>, and <code>config/app</code>).
                       </p>
                     </div>
                   </div>
@@ -2650,7 +3057,7 @@ export function AdminStudioView() {
                       disabled={busy}
                       onClick={() => void handleSeed()}
                       className={cn(
-                        "inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
+                        "inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
                         primaryBtn,
                       )}
                     >
@@ -2668,7 +3075,7 @@ export function AdminStudioView() {
                   </h3>
                   <ul className={cn("mt-3 space-y-2.5 text-xs leading-relaxed", subText)}>
                     <li className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff3565]" />
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5ce1b8]" />
                       <span>
                         <strong>YouTube &amp; 0ms Direct Audio:</strong> Upload an <code>.mp3</code> /{" "}
                         <code>.m4a</code> file or paste a YouTube link into any song under{" "}
@@ -2677,18 +3084,18 @@ export function AdminStudioView() {
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#13c276]" />
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e04f67]" />
                       <span>
                         <strong>Atomic Batch Push:</strong> Clicking{" "}
-                        <em>Push Live</em> commits all queued operations to Firestore in a
+                        <em>Push Live Changes</em> commits all queued operations to Firestore in a
                         single batch transaction.
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1992ff]" />
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#c9c4f6]" />
                       <span>
                         <strong>Instant Mobile Sync:</strong> Connected Android devices receive the
-                        updated song links and catalog changes immediately.
+                        updated song links, hero photos, and catalog changes immediately.
                       </span>
                     </li>
                   </ul>
