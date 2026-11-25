@@ -13,43 +13,46 @@ import { getLiveAlbum, getLiveTrack, getLiveTrackArtwork, useCatalog } from "./c
 import type { Track } from "@/types";
 import { pushRecentlyPlayed } from "./recently-played";
 import { useSettings } from "./settings";
+import { sanitizeHttpsUrl } from "./url-security";
 
 export type RepeatMode = "off" | "all" | "one";
 
 /**
  * Normalizes any Direct Audio URL (Google Drive share links, Dropbox share links,
  * GitHub blob links, Archive.org, Cloudinary, Firebase Storage, or direct .mp3/.m4a/.ogg/.wav URLs)
- * into a direct streamable audio URL for instant HTML5 <audio> playback.
+ * into a direct streamable `https://` audio URL for instant HTML5 <audio> playback.
  */
 export function resolveDirectAudioUrl(input?: string): string | null {
   if (!input) return null;
-  const trimmed = input.trim();
-  if (!trimmed) return null;
+  const safeInput = sanitizeHttpsUrl(input, { allowRelative: true });
+  if (!safeInput) return null;
 
   // 1. Google Drive share URL -> direct download stream
   // e.g. https://drive.google.com/file/d/FILE_ID/view?usp=sharing
   const gdriveMatch =
-    trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ??
-    trimmed.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+    safeInput.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ??
+    safeInput.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
   if (gdriveMatch?.[1]) {
     return `https://docs.google.com/uc?export=download&id=${gdriveMatch[1]}`;
   }
 
   // 2. Dropbox share URL -> direct stream (raw=1)
-  if (trimmed.includes("dropbox.com/")) {
-    return trimmed
+  if (safeInput.includes("dropbox.com/")) {
+    const rewritten = safeInput
       .replace("www.dropbox.com", "dl.dropboxusercontent.com")
       .replace(/[?&]dl=[01]/, "");
+    return sanitizeHttpsUrl(rewritten);
   }
 
   // 3. GitHub blob URL -> raw.githubusercontent.com
-  if (trimmed.includes("github.com/") && trimmed.includes("/blob/")) {
-    return trimmed
+  if (safeInput.includes("github.com/") && safeInput.includes("/blob/")) {
+    const rewritten = safeInput
       .replace("github.com/", "raw.githubusercontent.com/")
       .replace("/blob/", "/");
+    return sanitizeHttpsUrl(rewritten);
   }
 
-  return trimmed;
+  return safeInput;
 }
 
 /**

@@ -30,6 +30,23 @@ interface SettingsContextValue {
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
+function sanitizeSettings(raw: unknown): Settings {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_SETTINGS;
+  const obj = raw as Record<string, unknown>;
+  return {
+    autoplay:
+      typeof obj["autoplay"] === "boolean" ? obj["autoplay"] : DEFAULT_SETTINGS.autoplay,
+    rememberPlayback:
+      typeof obj["rememberPlayback"] === "boolean"
+        ? obj["rememberPlayback"]
+        : DEFAULT_SETTINGS.rememberPlayback,
+    trackRecentlyPlayed:
+      typeof obj["trackRecentlyPlayed"] === "boolean"
+        ? obj["trackRecentlyPlayed"]
+        : DEFAULT_SETTINGS.trackRecentlyPlayed,
+  };
+}
+
 function writeStorage(next: Settings) {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -45,8 +62,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Partial<Settings>;
-        return { ...DEFAULT_SETTINGS, ...parsed };
+        return sanitizeSettings(JSON.parse(raw));
       }
     } catch {
       /* storage unavailable */
@@ -58,7 +74,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (!uid) return;
     return subscribeUserDoc(uid, (data) => {
       if (!data.settings) return;
-      const merged: Settings = { ...DEFAULT_SETTINGS, ...data.settings };
+      const merged = sanitizeSettings(data.settings);
       setSettings(merged);
       writeStorage(merged);
     });

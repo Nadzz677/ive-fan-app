@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Disc3, Music, Sparkles, User } from "lucide-react";
+import { sanitizeHttpsUrl } from "@/lib/url-security";
 import { cn } from "@/lib/utils";
 
 export interface ArtworkImageProps {
@@ -28,23 +29,24 @@ export function ArtworkImage({
   showEmptyLabel = false,
 }: ArtworkImageProps) {
   const [hasError, setHasError] = useState(false);
-  const trimmedSrc = src?.trim();
+  const safeSrc = sanitizeHttpsUrl(src, { allowRelative: true });
 
   // Reset error status if the source URL changes
   useEffect(() => {
     setHasError(false);
-  }, [trimmedSrc]);
+  }, [safeSrc]);
 
-  const hasValidImage = Boolean(trimmedSrc && !hasError);
+  const hasValidImage = Boolean(safeSrc && !hasError);
 
-  if (hasValidImage) {
+  if (hasValidImage && safeSrc) {
     return (
       <img
-        src={trimmedSrc}
+        src={safeSrc}
         alt={alt}
         width={width}
         height={height}
         loading={loading}
+        referrerPolicy="no-referrer"
         onError={() => setHasError(true)}
         className={cn("h-full w-full object-cover", className)}
       />

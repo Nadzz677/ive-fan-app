@@ -28,6 +28,7 @@ import {
 } from "@/data/imageAssets";
 import type { Album, Member, NewsItem, Track } from "@/types";
 import { db, isFirebaseConfigured } from "./firebase";
+import { sanitizeHttpsUrl } from "./url-security";
 
 // Cache stays fresh indefinitely while real-time onSnapshot listeners keep it updated
 const CATALOG_STALE_TIME = 5 * 60 * 1000;
@@ -70,11 +71,12 @@ const prewarmedUrls = new Set<string>();
 function prewarmImageUrls(urls: (string | undefined)[]) {
   if (typeof window === "undefined") return;
   for (const raw of urls) {
-    const url = raw?.trim();
+    const url = sanitizeHttpsUrl(raw, { allowRelative: true });
     if (!url || prewarmedUrls.has(url)) continue;
     prewarmedUrls.add(url);
     const img = new window.Image();
     img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
     img.src = url;
   }
 }
@@ -84,11 +86,16 @@ function readLocalCache<T>(key: string, fallback: T): T {
   try {
     const raw = window.localStorage.getItem(key);
     if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as T;
-    if (Array.isArray(fallback) && (!Array.isArray(parsed) || parsed.length === 0)) {
-      return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(fallback)) {
+      if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+      return parsed as T;
     }
-    return parsed ?? fallback;
+    if (fallback && typeof fallback === "object") {
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return fallback;
+      return parsed as T;
+    }
+    return (parsed as T) ?? fallback;
   } catch {
     return fallback;
   }

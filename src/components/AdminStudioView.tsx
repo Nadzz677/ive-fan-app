@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Activity,
   AlertCircle,
@@ -59,6 +60,7 @@ import {
   useStagedCatalog,
 } from "@/lib/catalog";
 import { extractYouTubeId, resolveDirectAudioUrl } from "@/lib/player";
+import { validateAdminHttpsInput } from "@/lib/url-security";
 import { ArtworkImage } from "@/components/ArtworkImage";
 import { cn } from "@/lib/utils";
 import type { Album, AlbumType, Member, NewsItem, Track, TrackLanguage } from "@/types";
@@ -107,6 +109,12 @@ export function AdminStudioView() {
   const { albums, tracks, members, news, config, getAlbumTracks } = useCatalog();
   const { changes, pendingCount } = useStagedCatalog();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  const handleOpenFanPreview = () => {
+    setPreviewingFanApp(true);
+    void navigate({ to: "/" });
+  };
 
   const [tab, setTab] = useState<AdminTab>("albums");
   const [status, setStatus] = useState<string | null>(null);
@@ -259,6 +267,11 @@ export function AdminStudioView() {
     e.preventDefault();
     const id = editingAlbumId ?? slugify(albumTitle);
     if (!id) return;
+    const coverCheck = validateAdminHttpsInput(albumCover, "Album Cover URL");
+    if (!coverCheck.ok) {
+      setStatus(coverCheck.error);
+      return;
+    }
     const existing = albums.find((a) => a.id === id);
 
     const album: Album = {
@@ -267,7 +280,7 @@ export function AdminStudioView() {
       type: albumType,
       releaseDate: albumDate,
       language: albumLang,
-      cover: albumCover.trim(),
+      cover: coverCheck.value,
       description: albumDesc.trim() || `${albumType} by IVE.`,
       trackIds: existing?.trackIds ?? [],
       trackCount: existing?.trackCount ?? 0,
@@ -376,6 +389,16 @@ export function AdminStudioView() {
   const handleStageTrack = (e: React.FormEvent) => {
     e.preventDefault();
     if (!trackTitle.trim() || !selectedAlbumId) return;
+    const audioCheck = validateAdminHttpsInput(trackAudioUrl, "Direct Audio URL");
+    if (!audioCheck.ok) {
+      setStatus(audioCheck.error);
+      return;
+    }
+    const trimmedYt = trackYoutubeUrl.trim();
+    if (trimmedYt && !extractYouTubeId(trimmedYt)) {
+      setStatus("YouTube field must be a valid YouTube link or 11-character video ID.");
+      return;
+    }
     const parentAlbum = albums.find((a) => a.id === selectedAlbumId);
     const existingTracks = getAlbumTracks(selectedAlbumId);
     const id =
@@ -398,8 +421,8 @@ export function AdminStudioView() {
       language: trackLang,
       version: soloMemberObj ? "Solo" : "Original",
       ...(soloMemberObj ? { isSolo: true, member: soloMemberObj.id } : {}),
-      ...(trackYoutubeUrl.trim() ? { youtubeUrl: trackYoutubeUrl.trim() } : {}),
-      ...(trackAudioUrl.trim() ? { audioUrl: trackAudioUrl.trim() } : {}),
+      ...(trimmedYt ? { youtubeUrl: trimmedYt } : {}),
+      ...(audioCheck.value ? { audioUrl: audioCheck.value } : {}),
       ...(hasLyrics
         ? {
             lyricsAvailable: true,
@@ -418,6 +441,11 @@ export function AdminStudioView() {
     e.preventDefault();
     const base = members.find((m) => m.id === selectedMemberId);
     if (!base) return;
+    const imageCheck = validateAdminHttpsInput(memberImage, "Member Portrait URL");
+    if (!imageCheck.ok) {
+      setStatus(imageCheck.error);
+      return;
+    }
 
     const facts = memberFactsText
       .split("\n")
@@ -436,7 +464,7 @@ export function AdminStudioView() {
       birthYear: birthYearFromDate,
       tagline: memberTagline.trim() || base.tagline,
       bio: memberBio.trim() || base.bio,
-      image: memberImage.trim(),
+      image: imageCheck.value,
       ...(memberFullName.trim() ? { fullName: memberFullName.trim() } : {}),
       ...(memberBirthday.trim() ? { birthday: memberBirthday.trim() } : {}),
       ...(memberNationality.trim() ? { nationality: memberNationality.trim() } : {}),
@@ -472,6 +500,11 @@ export function AdminStudioView() {
     e.preventDefault();
     const id = editingNewsId ?? (slugify(newsTitle) || `news-${Date.now()}`);
     if (!newsTitle.trim()) return;
+    const imageCheck = validateAdminHttpsInput(newsImage, "News Image URL");
+    if (!imageCheck.ok) {
+      setStatus(imageCheck.error);
+      return;
+    }
 
     const details = newsDetailsText
       .split("\n")
@@ -485,7 +518,7 @@ export function AdminStudioView() {
       date: newsDate,
       summary: newsSummary.trim(),
       ...(details.length > 0 ? { details } : {}),
-      ...(newsImage.trim() ? { image: newsImage.trim() } : {}),
+      ...(imageCheck.value ? { image: imageCheck.value } : {}),
       ...(newsAlbumId ? { albumId: newsAlbumId } : {}),
     };
 
@@ -513,7 +546,12 @@ export function AdminStudioView() {
     e.preventDefault();
     const trimmed = newHeroUrl.trim();
     if (!trimmed) return;
-    const nextList = [...heroImagesList, trimmed];
+    const heroCheck = validateAdminHttpsInput(trimmed, "Hero Banner Photo URL");
+    if (!heroCheck.ok) {
+      setStatus(heroCheck.error);
+      return;
+    }
+    const nextList = [...heroImagesList, heroCheck.value];
     stageAppConfigSave({ heroImages: nextList });
     setNewHeroUrl("");
     setStatus(
@@ -582,7 +620,12 @@ export function AdminStudioView() {
   const handleSetWelcomePhotoUrl = (url: string) => {
     const trimmed = url.trim();
     if (!trimmed) return;
-    stageAppConfigSave({ welcomeImage: trimmed });
+    const welcomeCheck = validateAdminHttpsInput(trimmed, "Welcome Cover Photo URL");
+    if (!welcomeCheck.ok) {
+      setStatus(welcomeCheck.error);
+      return;
+    }
+    stageAppConfigSave({ welcomeImage: welcomeCheck.value });
     setWelcomePhotoInput("");
     setStatus(
       "Staged new Welcome Tour Cover Photo (Slide 1)! Click \"Push Live Changes\" to publish.",
@@ -915,7 +958,7 @@ export function AdminStudioView() {
 
             <button
               type="button"
-              onClick={() => setPreviewingFanApp(true)}
+              onClick={handleOpenFanPreview}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-medium transition-colors",
                 secondaryBtn,
@@ -1247,7 +1290,7 @@ export function AdminStudioView() {
 
             <button
               type="button"
-              onClick={() => setPreviewingFanApp(true)}
+              onClick={handleOpenFanPreview}
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-medium transition-colors",
                 secondaryBtn,

@@ -17,17 +17,29 @@ interface FavoritesContextValue {
 
 const FavoritesContext = createContext<FavoritesContextValue | null>(null);
 
+function sanitizeIdList(raw: unknown, maxLen: number): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is string => typeof item === "string" && item.length > 0 && item.length <= 120)
+    .slice(0, maxLen);
+}
+
+function sanitizeFavoritesState(raw: unknown): FavoritesState {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return EMPTY;
+  const obj = raw as Record<string, unknown>;
+  return {
+    song: sanitizeIdList(obj["song"], 300),
+    album: sanitizeIdList(obj["album"], 100),
+    member: sanitizeIdList(obj["member"], 20),
+  };
+}
+
 function readStorage(): FavoritesState {
   if (typeof window === "undefined") return EMPTY;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return EMPTY;
-    const parsed = JSON.parse(raw) as Partial<FavoritesState>;
-    return {
-      song: parsed.song ?? [],
-      album: parsed.album ?? [],
-      member: parsed.member ?? [],
-    };
+    return sanitizeFavoritesState(JSON.parse(raw));
   } catch {
     return EMPTY;
   }
@@ -50,11 +62,7 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
     if (!uid) return;
     return subscribeUserDoc(uid, (data) => {
       if (!data.favorites) return;
-      const remote: FavoritesState = {
-        song: data.favorites.song ?? [],
-        album: data.favorites.album ?? [],
-        member: data.favorites.member ?? [],
-      };
+      const remote = sanitizeFavoritesState(data.favorites);
       setFavorites(remote);
       writeStorage(remote);
     });

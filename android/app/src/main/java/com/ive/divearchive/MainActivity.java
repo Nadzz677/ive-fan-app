@@ -15,6 +15,42 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
 
+    private static String sanitizeText(String raw, String fallback, int maxLen) {
+        if (raw == null) return fallback;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return fallback;
+        return trimmed.length() > maxLen ? trimmed.substring(0, maxLen) : trimmed;
+    }
+
+    private static String sanitizeHttpsArtworkUrl(String raw) {
+        if (raw == null) return "";
+        String trimmed = raw.trim();
+        if (trimmed.length() > 2048) return "";
+        if (!trimmed.regionMatches(true, 0, "https://", 0, 8)) return "";
+        return trimmed;
+    }
+
+    private static boolean isAllowedMediaCommand(String command) {
+        if (command == null) return false;
+        switch (command) {
+            case "play":
+            case "pause":
+            case "toggle":
+            case "next":
+            case "prev":
+            case "seek":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private boolean isTrustedLocalWebViewOrigin() {
+        if (getBridge() == null || getBridge().getWebView() == null) return false;
+        String currentUrl = getBridge().getWebView().getUrl();
+        return currentUrl != null && currentUrl.startsWith("https://localhost");
+    }
+
     public class NativeAudioBridge {
         @JavascriptInterface
         public void updateMediaSession(
@@ -26,19 +62,31 @@ public class MainActivity extends BridgeActivity {
             double positionSeconds,
             double durationSeconds
         ) {
-            AudioKeepAliveService.isPlaybackActive = playing;
-            AudioKeepAliveService.isSessionActive = true;
+            final String safeTitle = sanitizeText(title, "IVE: Dive Archive", 160);
+            final String safeArtist = sanitizeText(artist, "IVE", 120);
+            final String safeAlbum = sanitizeText(album, "Dive Archive", 160);
+            final String safeArtwork = sanitizeHttpsArtworkUrl(artworkUrl);
+            final long safePosMs = Double.isFinite(positionSeconds)
+                ? Math.max(0L, Math.round(positionSeconds * 1000.0))
+                : 0L;
+            final long safeDurMs = Double.isFinite(durationSeconds)
+                ? Math.max(1000L, Math.round(durationSeconds * 1000.0))
+                : 180_000L;
+
             runOnUiThread(() -> {
+                if (!isTrustedLocalWebViewOrigin()) return;
+                AudioKeepAliveService.isPlaybackActive = playing;
+                AudioKeepAliveService.isSessionActive = true;
                 try {
                     Intent intent = new Intent(MainActivity.this, AudioKeepAliveService.class);
                     intent.setAction(AudioKeepAliveService.ACTION_UPDATE_MEDIA);
                     intent.putExtra(AudioKeepAliveService.EXTRA_PLAYING, playing);
-                    intent.putExtra(AudioKeepAliveService.EXTRA_TITLE, title != null ? title : "IVE: Dive Archive");
-                    intent.putExtra(AudioKeepAliveService.EXTRA_ARTIST, artist != null ? artist : "IVE");
-                    intent.putExtra(AudioKeepAliveService.EXTRA_ALBUM, album != null ? album : "Dive Archive");
-                    intent.putExtra(AudioKeepAliveService.EXTRA_ARTWORK_URL, artworkUrl != null ? artworkUrl : "");
-                    intent.putExtra(AudioKeepAliveService.EXTRA_POSITION_MS, Math.max(0L, Math.round(positionSeconds * 1000.0)));
-                    intent.putExtra(AudioKeepAliveService.EXTRA_DURATION_MS, Math.max(1000L, Math.round(durationSeconds * 1000.0)));
+                    intent.putExtra(AudioKeepAliveService.EXTRA_TITLE, safeTitle);
+                    intent.putExtra(AudioKeepAliveService.EXTRA_ARTIST, safeArtist);
+                    intent.putExtra(AudioKeepAliveService.EXTRA_ALBUM, safeAlbum);
+                    intent.putExtra(AudioKeepAliveService.EXTRA_ARTWORK_URL, safeArtwork);
+                    intent.putExtra(AudioKeepAliveService.EXTRA_POSITION_MS, safePosMs);
+                    intent.putExtra(AudioKeepAliveService.EXTRA_DURATION_MS, safeDurMs);
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         ContextCompat.startForegroundService(MainActivity.this, intent);
@@ -51,9 +99,10 @@ public class MainActivity extends BridgeActivity {
 
         @JavascriptInterface
         public void stopMediaSession() {
-            AudioKeepAliveService.isPlaybackActive = false;
-            AudioKeepAliveService.isSessionActive = false;
             runOnUiThread(() -> {
+                if (!isTrustedLocalWebViewOrigin()) return;
+                AudioKeepAliveService.isPlaybackActive = false;
+                AudioKeepAliveService.isSessionActive = false;
                 try {
                     Intent stopIntent = new Intent(MainActivity.this, AudioKeepAliveService.class);
                     stopIntent.setAction(AudioKeepAliveService.ACTION_STOP_SERVICE);
@@ -80,10 +129,14 @@ public class MainActivity extends BridgeActivity {
 
         // Route hardware / notification / lockscreen / Dynamic Island media buttons back into React player.tsx
         AudioKeepAliveService.setMediaCommandListener((command, seekSeconds) -> {
+            if (!isAllowedMediaCommand(command)) return;
+            final double safeSeek = (Double.isFinite(seekSeconds) && seekSeconds >= 0.0)
+                ? seekSeconds
+                : -1.0;
             runOnUiThread(() -> {
-                if (getBridge() != null && getBridge().getWebView() != null) {
+                if (getBridge() != null && getBridge().getWebView() != null && isTrustedLocalWebViewOrigin()) {
                     String js = "window.__iveNativeMediaCommand && window.__iveNativeMediaCommand('"
-                        + command + "', " + seekSeconds + ");";
+                        + command + "', " + safeSeek + ");";
                     getBridge().getWebView().evaluateJavascript(js, null);
                 }
             });
@@ -93,6 +146,8 @@ public class MainActivity extends BridgeActivity {
             WebView webView = getBridge().getWebView();
             WebSettings settings = webView.getSettings();
             settings.setMediaPlaybackRequiresUserGesture(false);
+            settings.setAllowFileAccess(false);
+            settings.setAllowContentAccess(false);
 
             webView.addJavascriptInterface(new NativeAudioBridge(), "IveNativeAudio");
 

@@ -3,10 +3,63 @@ import { storage } from "./firebase";
 import { resolveDirectAudioUrl } from "./player";
 
 const AUDIO_CACHE_NAME = "ive-dive-archive-audio-v1";
+const MAX_CACHED_AUDIO_ENTRIES = 30;
+const MAX_AUDIO_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB
+const MAX_IMAGE_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
 
-// In-memory map of network URL -> local Blob ObjectURL for 0ms synchronous playback
+const ALLOWED_AUDIO_MIMES = new Set([
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/ogg",
+  "audio/webm",
+  "audio/flac",
+]);
+const ALLOWED_AUDIO_EXT_RE = /\.(mp3|m4a|aac|wav|ogg|webm|flac)$/i;
+
+const ALLOWED_IMAGE_MIMES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+]);
+const ALLOWED_IMAGE_EXT_RE = /\.(jpe?g|png|webp|avif)$/i;
+
+// Bounded in-memory map of network URL -> local Blob ObjectURL for 0ms synchronous playback
 const blobUrlCache = new Map<string, string>();
 const inFlightPrefetches = new Set<string>();
+
+function setBoundedBlobUrl(networkUrl: string, objectUrl: string) {
+  if (blobUrlCache.has(networkUrl)) {
+    const prev = blobUrlCache.get(networkUrl);
+    if (prev && prev !== objectUrl) {
+      try {
+        URL.revokeObjectURL(prev);
+      } catch {
+        /* ignore */
+      }
+    }
+    blobUrlCache.delete(networkUrl);
+  }
+  while (blobUrlCache.size >= MAX_CACHED_AUDIO_ENTRIES) {
+    const oldestKey = blobUrlCache.keys().next().value;
+    if (!oldestKey) break;
+    const oldestBlobUrl = blobUrlCache.get(oldestKey);
+    blobUrlCache.delete(oldestKey);
+    if (oldestBlobUrl) {
+      try {
+        URL.revokeObjectURL(oldestBlobUrl);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  blobUrlCache.set(networkUrl, objectUrl);
+}
 
 /**
  * Helper to detect whether a track's `audioUrl` is a 30-second Apple/iTunes preview URL.
@@ -82,12 +135,25 @@ export async function uploadTrackAudioToStorage(
     );
   }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
-  const storageRef = ref(storage, `tracks/${trackId}/${Date.now()}-${safeName}`);
+  if (file.size <= 0 || file.size > MAX_AUDIO_UPLOAD_BYTES) {
+    throw new Error("Audio file must be greater than 0 bytes and at most 25 MB.");
+  }
+  const normalizedMime = file.type.trim().toLowerCase();
+  if (
+    !ALLOWED_AUDIO_EXT_RE.test(file.name) ||
+    (normalizedMime && !ALLOWED_AUDIO_MIMES.has(normalizedMime))
+  ) {
+    throw new Error("Unsupported audio file format. Allowed: MP3, M4A, AAC, WAV, OGG, WEBM, FLAC.");
+  }
+
+  const safeTrackId = trackId.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "track";
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 100);
+  const contentType = ALLOWED_AUDIO_MIMES.has(normalizedMime) ? normalizedMime : "audio/mpeg";
+  const storageRef = ref(storage, `tracks/${safeTrackId}/${Date.now()}-${safeName}`);
   const durationPromise = probeAudioFileDuration(file);
 
   const uploadTask = uploadBytesResumable(storageRef, file, {
-    contentType: file.type || "audio/mpeg",
+    contentType,
     cacheControl: "public, max-age=31536000, immutable",
   });
 
@@ -127,11 +193,22 @@ export async function uploadHeroImageToStorage(
     );
   }
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  if (file.size <= 0 || file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    throw new Error("Image file must be greater than 0 bytes and at most 8 MB.");
+  }
+  const normalizedMime = file.type.trim().toLowerCase();
+  if (
+    !ALLOWED_IMAGE_EXT_RE.test(file.name) ||
+    !ALLOWED_IMAGE_MIMES.has(normalizedMime)
+  ) {
+    throw new Error("Unsupported image format. Allowed: JPG, PNG, WEBP, AVIF.");
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 100);
   const storageRef = ref(storage, `hero/${Date.now()}-${safeName}`);
 
   const uploadTask = uploadBytesResumable(storageRef, file, {
-    contentType: file.type || "image/jpeg",
+    contentType: normalizedMime,
     cacheControl: "public, max-age=31536000, immutable",
   });
 
@@ -181,18 +258,34 @@ export async function warmAudioCacheInBackground(rawAudioUrl?: string): Promise<
       const existing = await cache.match(resolved);
       if (existing) {
         const blob = await existing.blob();
-        if (blob.size > 1024) {
-          blobUrlCache.set(resolved, URL.createObjectURL(blob));
+        if (blob.size > 1024 && blob.size <= MAX_AUDIO_UPLOAD_BYTES) {
+          setBoundedBlobUrl(resolved, URL.createObjectURL(blob));
           return;
         }
       }
 
-      const response = await fetch(resolved, { mode: "cors", credentials: "omit" });
+      const response = await fetch(resolved, {
+        mode: "cors",
+        credentials: "omit",
+        referrerPolicy: "no-referrer",
+      });
       if (response.ok) {
-        await cache.put(resolved, response.clone());
+        const contentLength = Number(response.headers.get("content-length") || "0");
+        if (contentLength > MAX_AUDIO_UPLOAD_BYTES) return;
+
+        const clone = response.clone();
         const blob = await response.blob();
-        if (blob.size > 1024) {
-          blobUrlCache.set(resolved, URL.createObjectURL(blob));
+        if (blob.size > 1024 && blob.size <= MAX_AUDIO_UPLOAD_BYTES) {
+          const keys = await cache.keys();
+          if (keys.length >= MAX_CACHED_AUDIO_ENTRIES) {
+            const overflow = keys.length - MAX_CACHED_AUDIO_ENTRIES + 1;
+            for (let i = 0; i < overflow; i++) {
+              const req = keys[i];
+              if (req) await cache.delete(req);
+            }
+          }
+          await cache.put(resolved, clone);
+          setBoundedBlobUrl(resolved, URL.createObjectURL(blob));
         }
       }
     }

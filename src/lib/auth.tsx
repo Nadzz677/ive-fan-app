@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   onAuthStateChanged,
   signInAnonymously,
@@ -8,8 +8,13 @@ import {
 import { auth, isFirebaseConfigured } from "./firebase";
 import { setActiveUserUid } from "./firestore-user";
 
-export const ADMIN_UID = "y0vz40TxTze8W225zMK7As8o4Uz2";
+const FALLBACK_ADMIN_UID =
+  (import.meta.env["VITE_ADMIN_UID"] as string | undefined)?.trim() ||
+  "y0vz40TxTze8W225zMK7As8o4Uz2";
 const ONBOARDING_SEEN_KEY = "ive-dive-archive:onboarding-seen";
+const GENERIC_AUTH_ERROR = "Invalid credentials or insufficient permissions.";
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 30_000;
 
 interface AuthContextValue {
   uid: string | null;
@@ -53,15 +58,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [uid, setUid] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(true);
+  const [isAdminState, setIsAdminState] = useState(false);
   const [loading, setLoading] = useState(isFirebaseConfigured);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(readOnboardingFlag);
   const [isPreviewingFanApp, setPreviewingFanApp] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const failedAttemptsRef = useRef(0);
+  const lockoutUntilRef = useRef(0);
+
   useEffect(() => {
     const firebaseAuth = auth;
     if (!firebaseAuth) {
       setActiveUserUid(null);
+      setIsAdminState(false);
       setLoading(false);
       return;
     }
@@ -75,19 +85,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsAnonymous(user.isAnonymous);
           setActiveUserUid(user.uid);
           setError(null);
-          setLoading(false);
+
+          if (user.isAnonymous) {
+            setIsAdminState(false);
+            setLoading(false);
+          } else if (user.uid === FALLBACK_ADMIN_UID) {
+            setIsAdminState(true);
+            setLoading(false);
+          } else {
+            void user
+              .getIdTokenResult()
+              .then((tokenResult) => {
+                setIsAdminState(tokenResult.claims["admin"] === true);
+              })
+              .catch(() => {
+                setIsAdminState(false);
+              })
+              .finally(() => {
+                setLoading(false);
+              });
+          }
         } else {
+          setIsAdminState(false);
           // Silently start an anonymous guest session so the fan app works with zero sign-in friction
-          signInAnonymously(firebaseAuth).catch((err: unknown) => {
-            const message =
-              err instanceof Error ? err.message : "Failed to start anonymous Firebase session";
-            setError(message);
+          signInAnonymously(firebaseAuth).catch(() => {
+            setError("Unable to initialize cloud session.");
             setLoading(false);
           });
         }
       },
-      (err) => {
-        setError(err.message);
+      () => {
+        setIsAdminState(false);
+        setError("Authentication state check failed.");
         setLoading(false);
       },
     );
@@ -110,12 +139,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInAdmin = useCallback(async (adminEmail: string, password: string) => {
     const firebaseAuth = auth;
     if (!firebaseAuth) {
-      throw new Error("Firebase is not configured.");
+      throw new Error("Cloud authentication is not configured.");
     }
-    const cred = await signInWithEmailAndPassword(firebaseAuth, adminEmail.trim(), password);
-    if (cred.user.uid !== ADMIN_UID) {
-      await signOut(firebaseAuth);
-      throw new Error("This account does not have Admin permissions.");
+
+    const now = Date.now();
+    if (now < lockoutUntilRef.current) {
+      const waitSec = Math.max(1, Math.ceil((lockoutUntilRef.current - now) / 1000));
+      throw new Error(`Too many sign-in attempts. Please wait ${waitSec}s and try again.`);
+    }
+
+    const normalizedEmail = adminEmail.trim();
+    if (!normalizedEmail || !password) {
+      throw new Error(GENERIC_AUTH_ERROR);
+    }
+
+    try {
+      const cred = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password);
+      let authorized = cred.user.uid === FALLBACK_ADMIN_UID;
+      if (!authorized) {
+        const tokenResult = await cred.user.getIdTokenResult().catch(() => null);
+        authorized = tokenResult?.claims["admin"] === true;
+      }
+
+      if (!authorized) {
+        await signOut(firebaseAuth);
+        failedAttemptsRef.current += 1;
+        if (failedAttemptsRef.current >= MAX_FAILED_ATTEMPTS) {
+          lockoutUntilRef.current = Date.now() + LOCKOUT_DURATION_MS;
+          failedAttemptsRef.current = 0;
+        }
+        throw new Error(GENERIC_AUTH_ERROR);
+      }
+
+      failedAttemptsRef.current = 0;
+      lockoutUntilRef.current = 0;
+    } catch (err: unknown) {
+      const code = (err as { code?: string } | null)?.code ?? "";
+      if (code === "auth/too-many-requests") {
+        lockoutUntilRef.current = Date.now() + LOCKOUT_DURATION_MS;
+        throw new Error("Too many sign-in attempts. Please wait before trying again.");
+      }
+      if (err instanceof Error && err.message === GENERIC_AUTH_ERROR) {
+        throw err;
+      }
+      failedAttemptsRef.current += 1;
+      if (failedAttemptsRef.current >= MAX_FAILED_ATTEMPTS) {
+        lockoutUntilRef.current = Date.now() + LOCKOUT_DURATION_MS;
+        failedAttemptsRef.current = 0;
+      }
+      throw new Error(GENERIC_AUTH_ERROR);
     }
   }, []);
 
@@ -123,6 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const firebaseAuth = auth;
     if (!firebaseAuth) return;
     setPreviewingFanApp(false);
+    setIsAdminState(false);
     await signOut(firebaseAuth);
   }, []);
 
@@ -131,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid,
       email,
       isAnonymous,
-      isAdmin: Boolean(uid && uid === ADMIN_UID),
+      isAdmin: isAdminState,
       loading,
       isCloudEnabled: isFirebaseConfigured && Boolean(uid),
       hasCompletedOnboarding,
@@ -147,6 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       uid,
       email,
       isAnonymous,
+      isAdminState,
       loading,
       hasCompletedOnboarding,
       isPreviewingFanApp,

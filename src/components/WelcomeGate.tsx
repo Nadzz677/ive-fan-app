@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Disc3, Palette, Rocket, Sparkles, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { DEFAULT_HERO_IMAGES, useCatalog, useStagedCatalog } from "@/lib/catalog";
 import { THEMES } from "@/lib/theme";
 import { getAlbumArtwork, getMemberImage } from "@/data/imageAssets";
 import { ArtworkImage } from "./ArtworkImage";
-import { AdminStudioView } from "./AdminStudioView";
 import { cn } from "@/lib/utils";
 
 const SLIDE_COUNT = 4;
@@ -31,6 +31,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
   } = useAuth();
   const { albums, members, config } = useCatalog();
   const { pendingCount } = useStagedCatalog();
+  const navigate = useNavigate();
   const isNative = Capacitor.isNativePlatform();
 
   const [slide, setSlide] = useState(0);
@@ -53,7 +54,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
     return withCovers.length > 0 ? withCovers : albums;
   }, [albums]);
 
-  const isWelcomeVisible = (isNative || isPreviewingFanApp) && !hasCompletedOnboarding;
+  const isWelcomeVisible = !hasCompletedOnboarding;
 
   // Nonstop 60fps requestAnimationFrame clock (zero stepping, zero pausing!)
   useEffect(() => {
@@ -69,16 +70,9 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
     return () => window.cancelAnimationFrame(frameId);
   }, [isWelcomeVisible]);
 
-  // 1. Desktop Browser (`npm run dev`): Defaults straight into Admin Studio,
-  //    with a one-click "Preview Fan App" mode to inspect staged changes in the live UI!
-  if (!isNative && !isPreviewingFanApp) {
-    return <AdminStudioView />;
-  }
-
-  // 2. Mobile / Android Fan App (or Desktop Live Preview):
-  //    When `hasCompletedOnboarding` is true, render the main Fan App (with the top return bar on desktop).
+  // Render the Fan App once onboarding is completed (with a live preview return bar if opened from /admin).
   if (hasCompletedOnboarding) {
-    if (!isNative) {
+    if (!isNative && isPreviewingFanApp) {
       return (
         <>
           <div className="sticky top-0 z-50 flex items-center justify-between border-b border-[#2c3c4a] bg-[#181e24]/95 px-5 py-2.5 text-[#eef3f7] shadow-md backdrop-blur-md">
@@ -107,7 +101,10 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 type="button"
-                onClick={() => setPreviewingFanApp(false)}
+                onClick={() => {
+                  setPreviewingFanApp(false);
+                  void navigate({ to: "/admin" });
+                }}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-[#5ce1b8] px-3.5 py-1.5 text-xs font-semibold text-[#142026] shadow-sm transition-colors hover:bg-[#4dd4aa]"
               >
                 <ArrowLeft size={13} />

@@ -1,21 +1,18 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Project-specific ProGuard / R8 rules for IVE: Dive Archive
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Preserve JavascriptInterface methods exposed to the Capacitor WebView
+-keepclassmembers class com.ive.divearchive.MainActivity$NativeAudioBridge {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.ive.divearchive.MainActivity { *; }
+-keep class com.ive.divearchive.MainActivity$NativeAudioBridge { *; }
+-keep class com.ive.divearchive.KeepAliveWebView { *; }
+-keep class com.ive.divearchive.AudioKeepAliveService { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve Capacitor core & plugin classes invoked reflectively
+-keep class com.getcapacitor.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Strip verbose source filenames while preserving line numbers for crash diagnostics
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

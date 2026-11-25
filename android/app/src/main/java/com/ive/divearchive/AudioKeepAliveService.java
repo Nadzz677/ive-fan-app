@@ -19,11 +19,14 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import javax.net.ssl.HttpsURLConnection;
 
 /**
  * Spotify-Style Android System MediaSession + Foreground Playback Service.
@@ -346,22 +349,123 @@ public class AudioKeepAliveService extends Service {
         return builder.build();
     }
 
-    private Bitmap downloadBitmap(String urlStr) {
-        HttpURLConnection conn = null;
+    private static final int MAX_ARTWORK_BYTES = 5 * 1024 * 1024;
+
+    private static boolean isSafePublicAddress(String host) {
+        if (host == null || host.trim().isEmpty()) return false;
+        String lower = host.trim().toLowerCase();
+        if (lower.equals("localhost") || lower.endsWith(".local") || lower.endsWith(".internal")) {
+            return false;
+        }
         try {
-            URL url = new URL(urlStr);
-            conn = (HttpURLConnection) url.openConnection();
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            if (addresses == null || addresses.length == 0) return false;
+            for (InetAddress addr : addresses) {
+                if (
+                    addr.isAnyLocalAddress() ||
+                    addr.isLoopbackAddress() ||
+                    addr.isLinkLocalAddress() ||
+                    addr.isSiteLocalAddress() ||
+                    addr.isMulticastAddress()
+                ) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+        if (height > reqHeight || width > reqWidth) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2;
+            }
+        }
+        return inSampleSize;
+    }
+
+    private Bitmap downloadBitmap(String urlStr) {
+        if (urlStr == null || urlStr.length() > 2048) return null;
+        HttpsURLConnection conn = null;
+        try {
+            URL url = new URL(urlStr.trim());
+            if (!"https".equalsIgnoreCase(url.getProtocol())) return null;
+            if (url.getUserInfo() != null && !url.getUserInfo().isEmpty()) return null;
+            if (!isSafePublicAddress(url.getHost())) return null;
+
+            conn = (HttpsURLConnection) url.openConnection();
+            conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(5000);
             conn.setDoInput(true);
             conn.connect();
-            try (InputStream is = conn.getInputStream()) {
-                Bitmap raw = BitmapFactory.decodeStream(is);
-                if (raw != null && (raw.getWidth() > 512 || raw.getHeight() > 512)) {
-                    return Bitmap.createScaledBitmap(raw, 512, 512, true);
-                }
-                return raw;
+
+            int status = conn.getResponseCode();
+            int redirects = 0;
+            while ((status == HttpURLConnection.HTTP_MOVED_PERM ||
+                    status == HttpURLConnection.HTTP_MOVED_TEMP ||
+                    status == HttpURLConnection.HTTP_SEE_OTHER ||
+                    status == 307 ||
+                    status == 308) && redirects < 2) {
+                String location = conn.getHeaderField("Location");
+                conn.disconnect();
+                conn = null;
+                if (location == null) return null;
+                URL nextUrl = new URL(url, location);
+                if (!"https".equalsIgnoreCase(nextUrl.getProtocol())) return null;
+                if (!isSafePublicAddress(nextUrl.getHost())) return null;
+                url = nextUrl;
+                conn = (HttpsURLConnection) url.openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setDoInput(true);
+                conn.connect();
+                status = conn.getResponseCode();
+                redirects++;
             }
+
+            if (status < 200 || status >= 300) return null;
+            int contentLength = conn.getContentLength();
+            if (contentLength > MAX_ARTWORK_BYTES) return null;
+
+            byte[] imageBytes;
+            try (InputStream is = conn.getInputStream();
+                 ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+                byte[] chunk = new byte[8192];
+                int total = 0;
+                int n;
+                while ((n = is.read(chunk)) != -1) {
+                    total += n;
+                    if (total > MAX_ARTWORK_BYTES) return null;
+                    buffer.write(chunk, 0, n);
+                }
+                imageBytes = buffer.toByteArray();
+            }
+
+            if (imageBytes.length == 0) return null;
+
+            BitmapFactory.Options boundsOpts = new BitmapFactory.Options();
+            boundsOpts.inJustDecodeBounds = true;
+            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length, boundsOpts);
+            if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) return null;
+            if (boundsOpts.outWidth > 8192 || boundsOpts.outHeight > 8192) return null;
+
+            BitmapFactory.Options decodeOpts = new BitmapFactory.Options();
+            decodeOpts.inSampleSize = calculateInSampleSize(boundsOpts, 512, 512);
+            decodeOpts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap raw = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length, decodeOpts);
+            if (raw != null && (raw.getWidth() > 512 || raw.getHeight() > 512)) {
+                return Bitmap.createScaledBitmap(raw, 512, 512, true);
+            }
+            return raw;
         } catch (Exception ignored) {
             return null;
         } finally {

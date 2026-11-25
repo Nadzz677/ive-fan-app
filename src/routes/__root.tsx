@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Capacitor } from "@capacitor/core";
 import {
   Outlet,
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -45,7 +47,7 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
+function ErrorComponent({ error, reset }: { error: unknown; reset: () => void }) {
   console.error(error);
   const router = useRouter();
   useEffect(() => {
@@ -137,28 +139,35 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isDesktopAdminRoute =
+    !Capacitor.isNativePlatform() && pathname.startsWith("/admin");
 
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ThemeProvider>
           <ThemeTransitionOverlay />
-          <WelcomeGate>
-            <SettingsProvider>
-              <FavoritesProvider>
-                <PlayerProvider>
-                  <AndroidBackHandler />
-                  <div className="mx-auto min-h-screen w-full max-w-3xl pb-36">
-                    {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-                    <Outlet />
-                  </div>
-                  <MusicPlayer />
-                  <ExpandedPlayer />
-                  <BottomNav />
-                </PlayerProvider>
-              </FavoritesProvider>
-            </SettingsProvider>
-          </WelcomeGate>
+          {isDesktopAdminRoute ? (
+            <Outlet />
+          ) : (
+            <WelcomeGate>
+              <SettingsProvider>
+                <FavoritesProvider>
+                  <PlayerProvider>
+                    <AndroidBackHandler />
+                    <div className="mx-auto min-h-screen w-full max-w-3xl pb-36">
+                      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+                      <Outlet />
+                    </div>
+                    <MusicPlayer />
+                    <ExpandedPlayer />
+                    <BottomNav />
+                  </PlayerProvider>
+                </FavoritesProvider>
+              </SettingsProvider>
+            </WelcomeGate>
+          )}
         </ThemeProvider>
       </AuthProvider>
     </QueryClientProvider>

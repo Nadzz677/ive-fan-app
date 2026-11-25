@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.admin == true ||
+        request.auth.uid == "y0vz40TxTze8W225zMK7As8o4Uz2"
+      );
+    }
+
+    // Full-length audio uploads managed exclusively via Admin Studio
+    match /tracks/{trackId}/{fileName} {
+      allow read: if true;
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && trackId.size() > 0
+        && trackId.size() <= 120
+        && fileName.size() > 0
+        && fileName.size() <= 180
+        && request.resource.size > 0
+        && request.resource.size <= 25 * 1024 * 1024
+        && request.resource.contentType.matches('audio/(mpeg|mp3|mp4|x-m4a|aac|wav|x-wav|ogg|webm|flac)');
+    }
+
+    // Home Screen Hero & Welcome Tour photos managed exclusively via Admin Studio
+    match /hero/{fileName} {
+      allow read: if true;
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin()
+        && fileName.size() > 0
+        && fileName.size() <= 180
+        && request.resource.size > 0
+        && request.resource.size <= 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|avif)');
+    }
+
+    // Explicit default deny for all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
