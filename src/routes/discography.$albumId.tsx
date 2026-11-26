@@ -69,13 +69,17 @@ function AlbumDetail() {
           </p>
 
           <div className="mt-5 flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => playTrack(queue[0]!, queue)}
-              className="press inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-semibold tracking-wide text-primary-foreground glow"
-            >
-              <Play size={14} className="fill-current" /> Play Album
-            </button>
+            {queue.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (queue[0]) playTrack(queue[0], queue);
+                }}
+                className="press inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-semibold tracking-wide text-primary-foreground glow"
+              >
+                <Play size={14} className="fill-current" /> Play Album
+              </button>
+            )}
             <FavoriteButton kind="album" id={album.id} size="md" />
           </div>
         </div>

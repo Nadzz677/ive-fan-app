@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowRight, ArrowUpRight, Disc3, Play, Settings } from "lucide-react";
+import { albumTrackCount } from "@/data/albums";
 import { getNewsImage } from "@/data/imageAssets";
 import { DEFAULT_HERO_IMAGES, useCatalog } from "@/lib/catalog";
-import { formatReleaseDate } from "@/lib/format";
+import { formatReleaseDate, releaseYear } from "@/lib/format";
 import { usePlayerControls } from "@/lib/player";
+import { sanitizeHttpsUrl } from "@/lib/url-security";
 import { cn } from "@/lib/utils";
 import { ArtworkImage } from "@/components/ArtworkImage";
 import { MemberCard } from "@/components/MemberCard";
@@ -35,17 +37,27 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const { playTrack } = usePlayerControls();
-  const { albums, tracks, members, config, getAlbum, getTrack } = useCatalog();
+  const { albums, tracks, members, config, getAlbum, getTrack, getAlbumTracks } = useCatalog();
   const featuredAlbum = getAlbum(config.featuredAlbumId) ?? albums[0]!;
   const featuredTrack = getTrack(config.featuredTrackId) ?? tracks[0]!;
+  const featuredTrackTotal =
+    getAlbumTracks(featuredAlbum.id).length || albumTrackCount(featuredAlbum);
+
+  const [failedHeroUrls, setFailedHeroUrls] = useState<Record<string, boolean>>({});
 
   const heroImages = useMemo(() => {
-    const list = (config.heroImages ?? []).map((u) => u.trim()).filter(Boolean);
-    if (list.length > 0) return list;
-    if (DEFAULT_HERO_IMAGES.length > 0) return DEFAULT_HERO_IMAGES;
-    const fallback = getNewsImage("dive-global-archive");
-    return fallback ? [fallback] : [];
-  }, [config.heroImages]);
+    const sanitizeList = (items: string[]) =>
+      items
+        .map((u) => sanitizeHttpsUrl(u, { allowRelative: true }))
+        .filter((u): u is string => Boolean(u && !failedHeroUrls[u]));
+
+    const configured = sanitizeList(config.heroImages ?? []);
+    if (configured.length > 0) return configured;
+    const defaults = sanitizeList(DEFAULT_HERO_IMAGES);
+    if (defaults.length > 0) return defaults;
+    const fallback = sanitizeHttpsUrl(getNewsImage("dive-global-archive"), { allowRelative: true });
+    return fallback && !failedHeroUrls[fallback] ? [fallback] : [];
+  }, [config.heroImages, failedHeroUrls]);
 
   const [heroIndex, setHeroIndex] = useState(0);
   const [dragOffsetX, setDragOffsetX] = useState(0);
@@ -132,6 +144,10 @@ function HomePage() {
                   width={1440}
                   height={1024}
                   draggable={false}
+                  referrerPolicy="no-referrer"
+                  onError={() =>
+                    setFailedHeroUrls((prev) => (prev[imgUrl] ? prev : { ...prev, [imgUrl]: true }))
+                  }
                   style={{
                     transform: isActive
                       ? `translate3d(${dragOffsetX * 0.25}px, 0, 0) scale(1)`
@@ -198,8 +214,7 @@ function HomePage() {
             )}
           </div>
           <h1 className="font-editorial mt-1.5 text-[3.4rem] font-semibold leading-[0.94] tracking-tight">
-            IVE{" "}
-            <span className="gradient-accent-text italic font-medium">Dive Archive</span>
+            IVE <span className="gradient-accent-text italic font-medium">Dive Archive</span>
           </h1>
           <p className="mt-2.5 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
             An editorial fan archive of IVE&apos;s eras, photocards, discography, and music.
@@ -251,7 +266,7 @@ function HomePage() {
       {/* 3. Featured Era Showcase */}
       <section className="mt-9">
         <SectionHeader
-          eyebrow={`LATEST ERA // ${new Date(featuredAlbum.releaseDate).getFullYear()}`}
+          eyebrow={`LATEST ERA // ${releaseYear(featuredAlbum.releaseDate)}`}
           title="Featured Release"
         />
         <div className="px-5">
@@ -273,7 +288,8 @@ function HomePage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-primary">
-                {featuredAlbum.type} · {featuredAlbum.trackIds.length} tracks
+                {featuredAlbum.type} · {featuredTrackTotal}{" "}
+                {featuredTrackTotal === 1 ? "track" : "tracks"}
               </p>
               <p className="font-editorial mt-0.5 truncate text-[1.75rem] font-semibold leading-tight group-hover:text-primary transition-colors">
                 {featuredAlbum.title}

@@ -21,12 +21,7 @@ const ALLOWED_AUDIO_MIMES = new Set([
 ]);
 const ALLOWED_AUDIO_EXT_RE = /\.(mp3|m4a|aac|wav|ogg|webm|flac)$/i;
 
-const ALLOWED_IMAGE_MIMES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/avif",
-]);
+const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif"]);
 const ALLOWED_IMAGE_EXT_RE = /\.(jpe?g|png|webp|avif)$/i;
 
 // Bounded in-memory map of network URL -> local Blob ObjectURL for 0ms synchronous playback
@@ -146,7 +141,11 @@ export async function uploadTrackAudioToStorage(
     throw new Error("Unsupported audio file format. Allowed: MP3, M4A, AAC, WAV, OGG, WEBM, FLAC.");
   }
 
-  const safeTrackId = trackId.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "track";
+  const safeTrackId =
+    trackId
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "track";
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 100);
   const contentType = ALLOWED_AUDIO_MIMES.has(normalizedMime) ? normalizedMime : "audio/mpeg";
   const storageRef = ref(storage, `tracks/${safeTrackId}/${Date.now()}-${safeName}`);
@@ -197,10 +196,7 @@ export async function uploadHeroImageToStorage(
     throw new Error("Image file must be greater than 0 bytes and at most 8 MB.");
   }
   const normalizedMime = file.type.trim().toLowerCase();
-  if (
-    !ALLOWED_IMAGE_EXT_RE.test(file.name) ||
-    !ALLOWED_IMAGE_MIMES.has(normalizedMime)
-  ) {
+  if (!ALLOWED_IMAGE_EXT_RE.test(file.name) || !ALLOWED_IMAGE_MIMES.has(normalizedMime)) {
     throw new Error("Unsupported image format. Allowed: JPG, PNG, WEBP, AVIF.");
   }
 

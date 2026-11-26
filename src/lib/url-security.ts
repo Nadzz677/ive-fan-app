@@ -4,7 +4,10 @@ const MAX_URL_LENGTH = 2048;
  * Checks whether a hostname resolves to a loopback, private, link-local, or cloud metadata address.
  */
 export function isPrivateOrLoopbackHost(rawHost: string): boolean {
-  const host = rawHost.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  const host = rawHost
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
   if (!host) return true;
 
   if (
@@ -49,8 +52,11 @@ export function sanitizeHttpsUrl(
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > MAX_URL_LENGTH) return null;
 
-  // Reject control characters
-  if (/[\u0000-\u001F\u007F]/.test(trimmed)) return null;
+  // Reject ASCII control characters
+  for (let i = 0; i < trimmed.length; i++) {
+    const code = trimmed.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return null;
+  }
 
   if (options?.allowRelative && trimmed.startsWith("/") && !trimmed.startsWith("//")) {
     if (trimmed.includes("..") || trimmed.includes("\\")) return null;

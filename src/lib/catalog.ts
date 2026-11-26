@@ -385,10 +385,38 @@ export function discardStagedChange(summary: StagedChangeSummary) {
       deletedAlbumIds: stagedState.deletedAlbumIds.filter((id) => id !== summary.targetId),
     };
   } else if (summary.kind === "track") {
+    const discardedTrack = stagedState.upsertedTracks[summary.targetId];
     const nextUpserts = { ...stagedState.upsertedTracks };
     delete nextUpserts[summary.targetId];
+
+    const nextAlbums = { ...stagedState.upsertedAlbums };
+    if (discardedTrack) {
+      const stagedAlbum = nextAlbums[discardedTrack.albumId];
+      const origAlbum =
+        liveAlbumsCache.find((a) => a.id === discardedTrack.albumId) ??
+        staticAlbums.find((a) => a.id === discardedTrack.albumId);
+      if (stagedAlbum && origAlbum && !origAlbum.trackIds.includes(discardedTrack.id)) {
+        const cleanedIds = stagedAlbum.trackIds.filter((id) => id !== discardedTrack.id);
+        if (
+          cleanedIds.length === origAlbum.trackIds.length &&
+          stagedAlbum.title === origAlbum.title &&
+          stagedAlbum.cover === (origAlbum.cover?.trim() || getAlbumArtwork(origAlbum.id)) &&
+          stagedAlbum.description === origAlbum.description
+        ) {
+          delete nextAlbums[discardedTrack.albumId];
+        } else {
+          nextAlbums[discardedTrack.albumId] = {
+            ...stagedAlbum,
+            trackIds: cleanedIds,
+            trackCount: cleanedIds.length,
+          };
+        }
+      }
+    }
+
     stagedState = {
       ...stagedState,
+      upsertedAlbums: nextAlbums,
       upsertedTracks: nextUpserts,
       deletedTrackIds: stagedState.deletedTrackIds.filter((id) => id !== summary.targetId),
     };
@@ -446,6 +474,15 @@ export async function pushStagedChangesToFirestore(): Promise<number> {
     if (!track.youtubeUrl?.trim()) {
       payload["youtubeUrl"] = deleteField();
     }
+    const hasKr = Boolean(track.lyricsKorean?.trim());
+    const hasRom = Boolean(track.lyricsRomanized?.trim());
+    payload["lyricsAvailable"] = hasKr || hasRom;
+    if (!hasKr) {
+      payload["lyricsKorean"] = deleteField();
+    }
+    if (!hasRom) {
+      payload["lyricsRomanized"] = deleteField();
+    }
     batch.set(doc(db, "tracks", track.id), payload, { merge: true });
     count++;
   }
@@ -493,8 +530,7 @@ let liveConfigCache: AppConfig = (() => {
     Array.isArray(cached.heroImages) && cached.heroImages.length > 0
       ? cached.heroImages
       : DEFAULT_HERO_IMAGES;
-  const welcomeImage =
-    cached.welcomeImage?.trim() || heroImages[0] || DEFAULT_HERO_IMAGES[0] || "";
+  const welcomeImage = cached.welcomeImage?.trim() || heroImages[0] || DEFAULT_HERO_IMAGES[0] || "";
   return {
     featuredAlbumId: cached.featuredAlbumId || DEFAULT_CONFIG.featuredAlbumId,
     featuredTrackId: cached.featuredTrackId || DEFAULT_CONFIG.featuredTrackId,
@@ -709,8 +745,7 @@ async function fetchAppConfigFromFirestore(): Promise<AppConfig> {
     ? data.heroImages.map((u) => String(u).trim()).filter(Boolean)
     : [];
   const heroImages = rawHero.length > 0 ? rawHero : DEFAULT_CONFIG.heroImages;
-  const welcomeImage =
-    data.welcomeImage?.trim() || heroImages[0] || DEFAULT_HERO_IMAGES[0] || "";
+  const welcomeImage = data.welcomeImage?.trim() || heroImages[0] || DEFAULT_HERO_IMAGES[0] || "";
   const nextConfig: AppConfig = {
     featuredAlbumId: data.featuredAlbumId?.trim() || DEFAULT_CONFIG.featuredAlbumId,
     featuredTrackId: data.featuredTrackId?.trim() || DEFAULT_CONFIG.featuredTrackId,
@@ -1145,7 +1180,21 @@ export async function seedFirestoreCatalog(): Promise<SeedResult> {
     );
   }
 
-  batch.set(doc(db, "config", "app"), DEFAULT_CONFIG, { merge: true });
+  const preservedHeroImages =
+    Array.isArray(liveConfigCache.heroImages) && liveConfigCache.heroImages.length > 0
+      ? liveConfigCache.heroImages
+      : DEFAULT_CONFIG.heroImages;
+  const preservedConfig: AppConfig = {
+    featuredAlbumId: liveConfigCache.featuredAlbumId || DEFAULT_CONFIG.featuredAlbumId,
+    featuredTrackId: liveConfigCache.featuredTrackId || DEFAULT_CONFIG.featuredTrackId,
+    heroImages: preservedHeroImages,
+    welcomeImage:
+      liveConfigCache.welcomeImage?.trim() ||
+      preservedHeroImages[0] ||
+      DEFAULT_CONFIG.welcomeImage ||
+      "",
+  };
+  batch.set(doc(db, "config", "app"), preservedConfig, { merge: true });
 
   await batch.commit();
 

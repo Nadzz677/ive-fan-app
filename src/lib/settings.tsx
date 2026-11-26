@@ -34,8 +34,7 @@ function sanitizeSettings(raw: unknown): Settings {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return DEFAULT_SETTINGS;
   const obj = raw as Record<string, unknown>;
   return {
-    autoplay:
-      typeof obj["autoplay"] === "boolean" ? obj["autoplay"] : DEFAULT_SETTINGS.autoplay,
+    autoplay: typeof obj["autoplay"] === "boolean" ? obj["autoplay"] : DEFAULT_SETTINGS.autoplay,
     rememberPlayback:
       typeof obj["rememberPlayback"] === "boolean"
         ? obj["rememberPlayback"]

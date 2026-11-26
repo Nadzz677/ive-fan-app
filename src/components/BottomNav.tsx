@@ -296,15 +296,16 @@ export function BottomNav() {
               type="button"
               role="tab"
               aria-selected={isCurrent}
-              onClick={() => {}}
+              onClick={(e) => {
+                if (e.detail === 0) commitNavigation(idx, false);
+              }}
               className={cn(
                 "relative z-10 flex flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-full py-1.5 transition-all duration-200",
-                isCurrent
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground/85",
+                isCurrent ? "text-primary" : "text-muted-foreground hover:text-foreground/85",
               )}
               style={{
-                transform: isCurrent && isEngaged ? "scale(1.1)" : isCurrent ? "scale(1.03)" : "scale(1)",
+                transform:
+                  isCurrent && isEngaged ? "scale(1.1)" : isCurrent ? "scale(1.03)" : "scale(1)",
                 transitionTimingFunction: "cubic-bezier(0.34, 1.56, 0.64, 1)",
               }}
             >

@@ -144,16 +144,18 @@ export const SongCard = memo(function SongCard({
         </div>
 
         <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-          <span className="truncate font-medium text-foreground/70">
-            {track.artist ?? "IVE"}
-          </span>
+          <span className="truncate font-medium text-foreground/70">{track.artist ?? "IVE"}</span>
           <span className="shrink-0 opacity-45">·</span>
           <span className="truncate">{album?.title ?? "IVE Archive"}</span>
           {track.language && track.language !== "Korean" && (
             <>
               <span className="shrink-0 opacity-45">·</span>
               <span className="shrink-0 font-mono text-[9.5px] uppercase tracking-wider text-primary/80">
-                {track.language === "Japanese" ? "JP" : track.language === "English" ? "EN" : track.language}
+                {track.language === "Japanese"
+                  ? "JP"
+                  : track.language === "English"
+                    ? "EN"
+                    : track.language}
               </span>
             </>
           )}

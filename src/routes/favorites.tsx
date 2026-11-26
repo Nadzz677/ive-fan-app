@@ -54,17 +54,18 @@ function BrowseButton({
 }
 
 function FavoritesPage() {
-  const { favorites, count } = useFavorites();
+  const { favorites } = useFavorites();
   const { getAlbum, getTrack, getMember } = useCatalog();
   const [tab, setTab] = useState<Tab>("all");
 
   const songs = favorites.song.map(getTrack).filter((t) => !!t);
   const savedAlbums = favorites.album.map(getAlbum).filter((a) => !!a);
   const savedMembers = favorites.member.map(getMember).filter((m) => !!m);
+  const totalSaved = songs.length + savedAlbums.length + savedMembers.length;
 
-  const showSongs = tab === "all" || tab === "songs";
-  const showAlbums = tab === "all" || tab === "albums";
-  const showMembers = tab === "all" || tab === "members";
+  const showSongs = tab === "songs" || (tab === "all" && songs.length > 0);
+  const showAlbums = tab === "albums" || (tab === "all" && savedAlbums.length > 0);
+  const showMembers = tab === "members" || (tab === "all" && savedMembers.length > 0);
 
   return (
     <div className="pb-6">
@@ -92,7 +93,7 @@ function FavoritesPage() {
         ))}
       </div>
 
-      {count === 0 && (
+      {totalSaved === 0 && (
         <EmptyState
           icon={<Heart size={22} />}
           title="No favorites yet"
@@ -108,7 +109,7 @@ function FavoritesPage() {
         />
       )}
 
-      {count > 0 && showSongs && (
+      {totalSaved > 0 && showSongs && (
         <section className="mb-9">
           <SectionHeader eyebrow={`${songs.length} TRACKS`} title="Saved Songs" />
           {songs.length > 0 ? (
@@ -132,7 +133,7 @@ function FavoritesPage() {
         </section>
       )}
 
-      {count > 0 && showAlbums && (
+      {totalSaved > 0 && showAlbums && (
         <section className="mb-9">
           <SectionHeader eyebrow={`${savedAlbums.length} RELEASES`} title="Saved Albums" />
           {savedAlbums.length > 0 ? (
@@ -152,7 +153,7 @@ function FavoritesPage() {
         </section>
       )}
 
-      {count > 0 && showMembers && (
+      {totalSaved > 0 && showMembers && (
         <section className="mb-9">
           <SectionHeader eyebrow={`${savedMembers.length} PHOTOCARDS`} title="Saved Members" />
           {savedMembers.length > 0 ? (

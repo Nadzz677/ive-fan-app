@@ -16,7 +16,7 @@ const SLIDE_COUNT = 4;
  */
 function getContinuousOffset(itemIdx: number, phase: number, total: number): number {
   if (total <= 0) return 0;
-  let diff = ((itemIdx - phase) % total + total) % total;
+  let diff = (((itemIdx - phase) % total) + total) % total;
   if (diff > total / 2) diff -= total;
   return diff;
 }
@@ -42,10 +42,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
 
   const welcomeCoverUrl = useMemo(() => {
     return (
-      config.welcomeImage?.trim() ||
-      config.heroImages?.[0]?.trim() ||
-      DEFAULT_HERO_IMAGES[0] ||
-      ""
+      config.welcomeImage?.trim() || config.heroImages?.[0]?.trim() || DEFAULT_HERO_IMAGES[0] || ""
     );
   }, [config.welcomeImage, config.heroImages]);
 
@@ -474,8 +471,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
                       transform: `translate3d(0, ${translateY.toFixed(1)}px, 0) scale(${scale.toFixed(3)})`,
                       opacity,
                       zIndex,
-                      borderColor:
-                        glowStrength > 0.25 ? t.swatch[1] : "rgba(255,255,255,0.14)",
+                      borderColor: glowStrength > 0.25 ? t.swatch[1] : "rgba(255,255,255,0.14)",
                       boxShadow:
                         glowStrength > 0.08
                           ? `0 0 ${(32 * glowStrength).toFixed(1)}px -2px ${t.swatch[1]}, 0 0 ${(52 * glowStrength).toFixed(1)}px -10px ${t.swatch[2]}, inset 0 1px 1px rgba(255,255,255,0.35)`
@@ -492,8 +488,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
                           className="h-4 w-4 rounded-full ring-1 ring-white/30"
                           style={{
                             background: t.swatch[1],
-                            boxShadow:
-                              glowStrength > 0.3 ? `0 0 10px ${t.swatch[1]}` : "none",
+                            boxShadow: glowStrength > 0.3 ? `0 0 10px ${t.swatch[1]}` : "none",
                           }}
                         />
                         <span
@@ -536,8 +531,8 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
               Recolor Your World
             </h2>
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
-              Switch between official album-matched color palettes with our 3-beat Prism Depth
-              Bloom animation.
+              Switch between official album-matched color palettes with our 3-beat Prism Depth Bloom
+              animation.
             </p>
           </div>
         )}

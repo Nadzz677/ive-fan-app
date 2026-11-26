@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Capacitor } from "@capacitor/core";
 import {
   Check,
@@ -96,6 +96,7 @@ function SettingsPage() {
     replayOnboarding,
   } = useAuth();
   const recent = useRecentlyPlayed();
+  const navigate = useNavigate();
   const isNative = Capacitor.isNativePlatform();
 
   return (
@@ -236,22 +237,23 @@ function SettingsPage() {
               <ChevronRight size={15} className="text-muted-foreground" />
             </Link>
 
-            {isNative && (
-              <button
-                type="button"
-                onClick={replayOnboarding}
-                className="press flex w-full items-center gap-3.5 py-3.5 text-left"
-              >
-                <Sparkles size={16} className="shrink-0 text-primary" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">Replay welcome tour</span>
-                  <span className="block text-xs text-muted-foreground">
-                    View the 4-page DIVE Archive introduction again
-                  </span>
+            <button
+              type="button"
+              onClick={() => {
+                replayOnboarding();
+                void navigate({ to: "/" });
+              }}
+              className="press flex w-full items-center gap-3.5 py-3.5 text-left"
+            >
+              <Sparkles size={16} className="shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Replay welcome tour</span>
+                <span className="block text-xs text-muted-foreground">
+                  View the 4-page DIVE Archive introduction again
                 </span>
-                <ChevronRight size={15} className="text-muted-foreground" />
-              </button>
-            )}
+              </span>
+              <ChevronRight size={15} className="text-muted-foreground" />
+            </button>
           </div>
         </div>
       </section>
@@ -292,8 +294,8 @@ function SettingsPage() {
       <section className="mt-9 px-5">
         <p className="font-editorial text-xl font-semibold">IVE: Dive Archive</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-          A fan-made editorial archive of IVE&apos;s members, discography, and music. Playback is
-          simulated — no copyrighted audio is included.
+          A fan-made editorial archive of IVE&apos;s members, discography, lyrics, and music.
+          Streams play via official YouTube embeds and linked cloud audio sources.
         </p>
         <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80">
           V{APP_VERSION} · Not affiliated with IVE or Starship Entertainment

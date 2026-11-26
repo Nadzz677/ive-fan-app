@@ -40,9 +40,7 @@ export interface AdminTheme {
 }
 
 export function getAdminTheme(isLight: boolean): AdminTheme {
-  const shellBg = isLight
-    ? "bg-[#f3f5f8] text-[#1b242d]"
-    : "bg-[#1f262d] text-[#eef3f7]";
+  const shellBg = isLight ? "bg-[#f3f5f8] text-[#1b242d]" : "bg-[#1f262d] text-[#eef3f7]";
 
   const chromeBg = isLight
     ? "bg-[#22303c] border-[#2c3c4a] text-[#eef3f7]"
@@ -56,9 +54,7 @@ export function getAdminTheme(isLight: boolean): AdminTheme {
     ? "bg-white border-[#e2e7ee] shadow-[0_8px_24px_-12px_rgba(24,30,36,0.08)]"
     : "bg-[#181e24] border-[#26303a] shadow-[0_14px_34px_-14px_rgba(0,0,0,0.65)]";
 
-  const subPanelBg = isLight
-    ? "bg-[#f6f8fa] border-[#dfe5ec]"
-    : "bg-[#222a32] border-[#2f3a46]";
+  const subPanelBg = isLight ? "bg-[#f6f8fa] border-[#dfe5ec]" : "bg-[#222a32] border-[#2f3a46]";
 
   const dividerClass = isLight ? "divide-[#e6ebf0]" : "divide-[#26303a]";
   const borderClass = isLight ? "border-[#dfe5ec]" : "border-[#28323c]";
@@ -78,9 +74,7 @@ export function getAdminTheme(isLight: boolean): AdminTheme {
     ? "bg-[#5ce1b8]/15 ring-1 ring-inset ring-[#5ce1b8]/45"
     : "bg-[#5ce1b8]/12 ring-1 ring-inset ring-[#5ce1b8]/35";
 
-  const badgeNeutral = isLight
-    ? "bg-[#eef2f6] text-[#3b4a58]"
-    : "bg-[#252e37] text-[#b8c5d1]";
+  const badgeNeutral = isLight ? "bg-[#eef2f6] text-[#3b4a58]" : "bg-[#252e37] text-[#b8c5d1]";
 
   const inputClass = cn(
     "w-full rounded-xl border px-3 py-2 text-xs outline-none transition-colors focus:border-[#5ce1b8] focus:ring-1 focus:ring-[#5ce1b8]/35",

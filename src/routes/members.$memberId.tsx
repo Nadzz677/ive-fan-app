@@ -27,7 +27,9 @@ export const Route = createFileRoute("/members/$memberId")({
     <div className="px-5 pt-10">
       <BackLink to="/members" label="Members" />
       <h1 className="font-editorial mt-6 text-3xl font-semibold">Member not found</h1>
-      <p className="mt-2 text-sm text-muted-foreground">This profile isn&apos;t in the archive yet.</p>
+      <p className="mt-2 text-sm text-muted-foreground">
+        This profile isn&apos;t in the archive yet.
+      </p>
     </div>
   ),
 });
@@ -157,7 +159,10 @@ function MemberDetail() {
             <h2 className="font-editorial text-2xl font-semibold">Archive Notes</h2>
             <ul className="mt-3.5 space-y-3">
               {member.facts.map((fact, idx) => (
-                <li key={fact} className="flex items-baseline gap-3.5 text-sm text-muted-foreground">
+                <li
+                  key={fact}
+                  className="flex items-baseline gap-3.5 text-sm text-muted-foreground"
+                >
                   <span className="font-mono text-[10px] font-semibold text-primary">
                     {String(idx + 1).padStart(2, "0")}
                   </span>

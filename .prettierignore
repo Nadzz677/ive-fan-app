@@ -1,7 +1,11 @@
 node_modules
 dist
+dist-mobile
 .output
 .vinxi
+.tanstack
+.wrangler
+android
 pnpm-lock.yaml
 package-lock.json
 bun.lock

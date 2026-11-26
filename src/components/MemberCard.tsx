@@ -58,7 +58,11 @@ export function MemberCard({
           </span>
         )}
 
-        <div className={compact ? "absolute inset-x-0 bottom-0 p-2.5" : "absolute inset-x-0 bottom-0 p-3.5"}>
+        <div
+          className={
+            compact ? "absolute inset-x-0 bottom-0 p-2.5" : "absolute inset-x-0 bottom-0 p-3.5"
+          }
+        >
           <p
             className={
               compact
@@ -69,7 +73,9 @@ export function MemberCard({
             {member.name}
           </p>
           <p className="mt-1 truncate font-mono text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
-            {compact ? member.koreanName : `${member.koreanName} · ${member.position.split(",")[0]}`}
+            {compact
+              ? member.koreanName
+              : `${member.koreanName} · ${member.position.split(",")[0]}`}
           </p>
         </div>
       </Link>

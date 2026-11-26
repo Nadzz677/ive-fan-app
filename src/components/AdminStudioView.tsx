@@ -98,14 +98,8 @@ function formatDurationMmSs(seconds?: number) {
 }
 
 export function AdminStudioView() {
-  const {
-    isAdmin,
-    email,
-    signInAdmin,
-    signOutAdmin,
-    isCloudEnabled,
-    setPreviewingFanApp,
-  } = useAuth();
+  const { isAdmin, email, signInAdmin, signOutAdmin, isCloudEnabled, setPreviewingFanApp } =
+    useAuth();
   const { albums, tracks, members, news, config, getAlbumTracks } = useCatalog();
   const { changes, pendingCount } = useStagedCatalog();
   const queryClient = useQueryClient();
@@ -169,9 +163,9 @@ export function AdminStudioView() {
 
   // Track Editor form (supports both Add New & Edit Existing + YouTube / Audio Link)
   const [trackViewFilter, setTrackViewFilter] = useState<string>("ALL");
-  const [trackAudioStatusFilter, setTrackAudioStatusFilter] = useState<"all" | "linked" | "missing">(
-    "all",
-  );
+  const [trackAudioStatusFilter, setTrackAudioStatusFilter] = useState<
+    "all" | "linked" | "missing"
+  >("all");
   const [trackSearchQuery, setTrackSearchQuery] = useState("");
   const [selectedAlbumId, setSelectedAlbumId] = useState(albums[0]?.id ?? "looks-can-kill");
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
@@ -566,9 +560,7 @@ export function AdminStudioView() {
     setHeroUploadProgress(0);
     setStatus(null);
     try {
-      const downloadUrl = await uploadHeroImageToStorage(file, (pct) =>
-        setHeroUploadProgress(pct),
-      );
+      const downloadUrl = await uploadHeroImageToStorage(file, (pct) => setHeroUploadProgress(pct));
       const nextList = [...heroImagesList, downloadUrl];
       stageAppConfigSave({ heroImages: nextList });
       setStatus(
@@ -611,7 +603,7 @@ export function AdminStudioView() {
 
   const handleResetDefaultHeroPhotos = () => {
     stageAppConfigSave({ heroImages: DEFAULT_HERO_IMAGES });
-    setStatus("Restored baseline IVE Hero Photos. Click \"Push Live\" to apply.");
+    setStatus('Restored baseline IVE Hero Photos. Click "Push Live" to apply.');
   };
 
   const activeWelcomePhoto =
@@ -628,7 +620,7 @@ export function AdminStudioView() {
     stageAppConfigSave({ welcomeImage: welcomeCheck.value });
     setWelcomePhotoInput("");
     setStatus(
-      "Staged new Welcome Tour Cover Photo (Slide 1)! Click \"Push Live Changes\" to publish.",
+      'Staged new Welcome Tour Cover Photo (Slide 1)! Click "Push Live Changes" to publish.',
     );
   };
 
@@ -711,8 +703,7 @@ export function AdminStudioView() {
   const activeFeaturedAlbum = albums.find((a) => a.id === config.featuredAlbumId) ?? albums[0];
   const activeFeaturedTrack = tracks.find((t) => t.id === config.featuredTrackId) ?? tracks[0];
   const currentAlbumForTracks = albums.find((a) => a.id === selectedAlbumId) ?? albums[0];
-  const baseDisplayedTracks =
-    trackViewFilter === "ALL" ? tracks : getAlbumTracks(trackViewFilter);
+  const baseDisplayedTracks = trackViewFilter === "ALL" ? tracks : getAlbumTracks(trackViewFilter);
   const selectedAlbumTracks = baseDisplayedTracks.filter((t) => {
     const hasLink = Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl));
     if (trackAudioStatusFilter === "linked" && !hasLink) return false;
@@ -732,8 +723,8 @@ export function AdminStudioView() {
   const parsedDirectAudioPreview = resolveDirectAudioUrl(trackAudioUrl);
   const isSpotifyLinkWarning = trackAudioUrl.toLowerCase().includes("spotify.com");
   const itunesPreviewTracksCount = tracks.filter((t) => isItunesPreviewUrl(t.audioUrl)).length;
-  const tracksWithAudioCount = tracks.filter(
-    (t) => Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl)),
+  const tracksWithAudioCount = tracks.filter((t) =>
+    Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl)),
   ).length;
 
   const navItems: {
@@ -922,9 +913,7 @@ export function AdminStudioView() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-base font-bold tracking-tight text-white">
-                  Dive Archive
-                </span>
+                <span className="text-base font-bold tracking-tight text-white">Dive Archive</span>
                 <span className="rounded-full bg-[#e04f67] px-2 py-0.5 font-mono text-[10px] font-semibold text-white">
                   CMS
                 </span>
@@ -973,7 +962,9 @@ export function AdminStudioView() {
         {/* Center Sign-In Card */}
         <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
           <div className={cn("rounded-2xl border p-7", panelBg)}>
-            <div className={cn("mb-6 flex items-center justify-between border-b pb-4", borderClass)}>
+            <div
+              className={cn("mb-6 flex items-center justify-between border-b pb-4", borderClass)}
+            >
               <div className="flex items-center gap-2.5">
                 <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#5ce1b8]/15 text-[#5ce1b8] ring-1 ring-[#5ce1b8]/30">
                   <Lock size={16} />
@@ -982,9 +973,7 @@ export function AdminStudioView() {
                   <h1 className={cn("text-base font-semibold", headingText)}>
                     Administrator Sign-In
                   </h1>
-                  <p className={cn("text-[11px]", subText)}>
-                    Project: ive-dive-archive
-                  </p>
+                  <p className={cn("text-[11px]", subText)}>Project: ive-dive-archive</p>
                 </div>
               </div>
               <span
@@ -1111,9 +1100,7 @@ export function AdminStudioView() {
             <p className="mt-2.5 text-sm font-bold tracking-[0.16em] text-white uppercase">
               D.I.V.E.
             </p>
-            <p className="mt-0.5 text-[10px] text-[#9eb0c0]">
-              Archive Studio CMS
-            </p>
+            <p className="mt-0.5 text-[10px] text-[#9eb0c0]">Archive Studio CMS</p>
           </div>
 
           {/* M.R.A. Navigation Items (Pure White Active Capsule + Coral-Rose Count Badges) */}
@@ -1136,7 +1123,9 @@ export function AdminStudioView() {
                     <span className="flex items-center gap-3">
                       <Icon
                         size={16}
-                        className={active ? "text-[#1b242d]" : "text-[#9eb0c0] group-hover:text-white"}
+                        className={
+                          active ? "text-[#1b242d]" : "text-[#9eb0c0] group-hover:text-white"
+                        }
                       />
                       <span className="truncate">{label}</span>
                     </span>
@@ -1145,9 +1134,7 @@ export function AdminStudioView() {
                       <span
                         className={cn(
                           "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[10px] font-bold",
-                          active
-                            ? "bg-[#e04f67] text-white"
-                            : "bg-[#e04f67] text-white shadow-xs",
+                          active ? "bg-[#e04f67] text-white" : "bg-[#e04f67] text-white shadow-xs",
                         )}
                       >
                         {count}
@@ -1165,9 +1152,7 @@ export function AdminStudioView() {
           <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-[#5ce1b8] to-[#22303c] text-sm font-bold text-[#142026] shadow-md ring-2 ring-[#5ce1b8]/50">
             {adminInitials}
           </div>
-          <p className="mt-2.5 truncate text-xs font-semibold text-white">
-            {adminDisplayName}
-          </p>
+          <p className="mt-2.5 truncate text-xs font-semibold text-white">{adminDisplayName}</p>
           <p className="text-[10px] text-[#9eb0c0]">Super Admin</p>
           <button
             type="button"
@@ -1202,9 +1187,7 @@ export function AdminStudioView() {
             <div
               className={cn(
                 "flex w-72 items-center gap-2.5 rounded-xl border px-3.5 py-2 lg:w-80",
-                isLight
-                  ? "border-[#d5dde6] bg-[#f3f5f8]"
-                  : "border-[#2e3a46] bg-[#252e37]",
+                isLight ? "border-[#d5dde6] bg-[#f3f5f8]" : "border-[#2e3a46] bg-[#252e37]",
               )}
             >
               <Search size={14} className={subText} />
@@ -1220,11 +1203,7 @@ export function AdminStudioView() {
                 )}
               />
               {globalSearch && (
-                <button
-                  type="button"
-                  onClick={() => setGlobalSearch("")}
-                  className={subText}
-                >
+                <button type="button" onClick={() => setGlobalSearch("")} className={subText}>
                   <X size={12} />
                 </button>
               )}
@@ -1249,9 +1228,7 @@ export function AdminStudioView() {
                       )}
                     >
                       <div className="min-w-0">
-                        <p className={cn("truncate font-semibold", headingText)}>
-                          {res.title}
-                        </p>
+                        <p className={cn("truncate font-semibold", headingText)}>{res.title}</p>
                         <p className={cn("truncate text-[10px]", subText)}>{res.sub}</p>
                       </div>
                       <span className="shrink-0 rounded-md bg-[#c9c4f6]/20 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[#c9c4f6]">
@@ -1329,9 +1306,7 @@ export function AdminStudioView() {
               )}
             >
               <Rocket size={13} />
-              <span>
-                {busy ? "Deploying..." : `Push Live Changes (${pendingCount})`}
-              </span>
+              <span>{busy ? "Deploying..." : `Push Live Changes (${pendingCount})`}</span>
             </button>
           </div>
         </header>
@@ -1343,16 +1318,22 @@ export function AdminStudioView() {
             {/* Card 1: Discography Catalog */}
             <div className={cn("rounded-2xl border p-4", panelBg)}>
               <div className="flex items-center justify-between">
-                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
+                <span
+                  className={cn(
+                    "font-mono text-[10px] font-semibold uppercase tracking-wider",
+                    subText,
+                  )}
+                >
                   Discography Catalog
                 </span>
                 <Disc3 size={15} className="text-[#e04f67]" />
               </div>
               <p className={cn("mt-2 text-2xl font-bold tracking-tight", headingText)}>
-                {albums.length}{" "}
-                <span className={cn("text-xs font-normal", subText)}>releases</span>
+                {albums.length} <span className={cn("text-xs font-normal", subText)}>releases</span>
               </p>
-              <div className={cn("mt-2 flex items-center gap-2 font-mono text-[11px]", mutedMonoText)}>
+              <div
+                className={cn("mt-2 flex items-center gap-2 font-mono text-[11px]", mutedMonoText)}
+              >
                 <span className="inline-block h-2.5 w-1 rounded-full bg-[#5ce1b8]" />
                 <span>
                   {heroImagesList.length} hero photos · {members.length} members
@@ -1363,7 +1344,12 @@ export function AdminStudioView() {
             {/* Card 2: Audio & YouTube Index (Mint-Aqua Accent) */}
             <div className={cn("rounded-2xl border p-4", panelBg)}>
               <div className="flex items-center justify-between">
-                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
+                <span
+                  className={cn(
+                    "font-mono text-[10px] font-semibold uppercase tracking-wider",
+                    subText,
+                  )}
+                >
                   Audio &amp; YouTube Index
                 </span>
                 <Volume2 size={15} className="text-[#5ce1b8]" />
@@ -1380,7 +1366,12 @@ export function AdminStudioView() {
             {/* Card 3: Active Featured Spotlight (Soft Lavender Accent) */}
             <div className={cn("rounded-2xl border p-4", panelBg)}>
               <div className="flex items-center justify-between">
-                <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", subText)}>
+                <span
+                  className={cn(
+                    "font-mono text-[10px] font-semibold uppercase tracking-wider",
+                    subText,
+                  )}
+                >
                   Active Featured Spotlight
                 </span>
                 <Star size={15} className="text-[#c9c4f6]" />
@@ -1397,9 +1388,7 @@ export function AdminStudioView() {
             <div
               className={cn(
                 "rounded-2xl border p-4 transition-colors",
-                pendingCount > 0
-                  ? "border-[#e04f67]/50 bg-[#e04f67]/12"
-                  : panelBg,
+                pendingCount > 0 ? "border-[#e04f67]/50 bg-[#e04f67]/12" : panelBg,
               )}
             >
               <div className="flex items-center justify-between">
@@ -1435,12 +1424,15 @@ export function AdminStudioView() {
             <div
               className={cn(
                 "rounded-2xl border p-4",
-                isLight
-                  ? "border-[#e04f67]/40 bg-[#fff5f7]"
-                  : "border-[#e04f67]/40 bg-[#241d23]",
+                isLight ? "border-[#e04f67]/40 bg-[#fff5f7]" : "border-[#e04f67]/40 bg-[#241d23]",
               )}
             >
-              <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b pb-3", borderClass)}>
+              <div
+                className={cn(
+                  "flex flex-wrap items-center justify-between gap-2 border-b pb-3",
+                  borderClass,
+                )}
+              >
                 <div className="flex items-center gap-2">
                   <span className="inline-flex h-2 w-2 rounded-full bg-[#e04f67]" />
                   <h2
@@ -1515,7 +1507,12 @@ export function AdminStudioView() {
               {/* Left 7 Cols: Structured Data Table */}
               <div className="lg:col-span-7">
                 <div className={cn("overflow-hidden rounded-xl border", panelBg)}>
-                  <div className={cn("flex items-center justify-between border-b px-5 py-3.5", borderClass)}>
+                  <div
+                    className={cn(
+                      "flex items-center justify-between border-b px-5 py-3.5",
+                      borderClass,
+                    )}
+                  >
                     <div>
                       <h2 className={cn("text-sm font-semibold", headingText)}>
                         Discography Releases ({albums.length})
@@ -1540,7 +1537,12 @@ export function AdminStudioView() {
                           )}
                         >
                           <div className="flex min-w-0 flex-1 items-center gap-3.5">
-                            <div className={cn("h-11 w-11 shrink-0 overflow-hidden rounded-lg border", borderClass)}>
+                            <div
+                              className={cn(
+                                "h-11 w-11 shrink-0 overflow-hidden rounded-lg border",
+                                borderClass,
+                              )}
+                            >
                               <ArtworkImage
                                 src={a.cover}
                                 alt={a.title}
@@ -1567,7 +1569,12 @@ export function AdminStudioView() {
                                   {a.type}
                                 </span>
                               </div>
-                              <div className={cn("mt-0.5 flex items-center gap-2 font-mono text-[11px]", subText)}>
+                              <div
+                                className={cn(
+                                  "mt-0.5 flex items-center gap-2 font-mono text-[11px]",
+                                  subText,
+                                )}
+                              >
                                 <span>{a.releaseDate}</span>
                                 <span>·</span>
                                 <span>{a.language ?? "Korean"}</span>
@@ -1635,7 +1642,9 @@ export function AdminStudioView() {
                   onSubmit={handleStageAlbum}
                   className={cn("sticky top-20 space-y-4 rounded-xl border p-5", panelBg)}
                 >
-                  <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
+                  <div
+                    className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}
+                  >
                     <div className="flex items-center gap-2">
                       <FolderKanban size={16} className="text-[#5ce1b8]" />
                       <div>
@@ -1653,7 +1662,10 @@ export function AdminStudioView() {
                       <button
                         type="button"
                         onClick={resetAlbumForm}
-                        className={cn("rounded-lg border px-2.5 py-1 text-xs font-medium", secondaryBtn)}
+                        className={cn(
+                          "rounded-lg border px-2.5 py-1 text-xs font-medium",
+                          secondaryBtn,
+                        )}
                       >
                         Reset to New
                       </button>
@@ -1728,8 +1740,15 @@ export function AdminStudioView() {
                   </div>
 
                   {albumCover.trim() && (
-                    <div className={cn("flex items-center gap-3 rounded-lg border p-2.5", subPanelBg)}>
-                      <div className={cn("h-12 w-12 shrink-0 overflow-hidden rounded border", borderClass)}>
+                    <div
+                      className={cn("flex items-center gap-3 rounded-lg border p-2.5", subPanelBg)}
+                    >
+                      <div
+                        className={cn(
+                          "h-12 w-12 shrink-0 overflow-hidden rounded border",
+                          borderClass,
+                        )}
+                      >
                         <ArtworkImage
                           src={albumCover}
                           alt="Cover preview"
@@ -1803,9 +1822,7 @@ export function AdminStudioView() {
                           onClick={() => setTrackAudioStatusFilter(pill.id)}
                           className={cn(
                             "rounded-md px-2.5 py-1 font-mono text-[10px] font-semibold transition-colors",
-                            trackAudioStatusFilter === pill.id
-                              ? primaryBtn
-                              : secondaryBtn,
+                            trackAudioStatusFilter === pill.id ? primaryBtn : secondaryBtn,
                           )}
                         >
                           {pill.label}
@@ -1846,7 +1863,12 @@ export function AdminStudioView() {
                 </div>
 
                 <div className={cn("overflow-hidden rounded-xl border", panelBg)}>
-                  <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5", borderClass)}>
+                  <div
+                    className={cn(
+                      "flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5",
+                      borderClass,
+                    )}
+                  >
                     <div>
                       <h2 className={cn("text-sm font-semibold", headingText)}>
                         {trackViewFilter === "ALL"
@@ -1894,7 +1916,12 @@ export function AdminStudioView() {
                           >
                             <div className="flex min-w-0 flex-1 items-center gap-3.5">
                               {trackViewFilter === "ALL" && parentAlbumObj ? (
-                                <div className={cn("h-9 w-9 shrink-0 overflow-hidden rounded-md border", borderClass)}>
+                                <div
+                                  className={cn(
+                                    "h-9 w-9 shrink-0 overflow-hidden rounded-md border",
+                                    borderClass,
+                                  )}
+                                >
                                   <ArtworkImage
                                     src={parentAlbumObj.cover}
                                     alt={parentAlbumObj.title}
@@ -1903,7 +1930,12 @@ export function AdminStudioView() {
                                   />
                                 </div>
                               ) : (
-                                <span className={cn("w-6 shrink-0 font-mono text-xs font-semibold", mutedMonoText)}>
+                                <span
+                                  className={cn(
+                                    "w-6 shrink-0 font-mono text-xs font-semibold",
+                                    mutedMonoText,
+                                  )}
+                                >
                                   {String(idx + 1).padStart(2, "0")}
                                 </span>
                               )}
@@ -1969,7 +2001,10 @@ export function AdminStudioView() {
                                     "inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition-colors",
                                     isItunes
                                       ? "border-[#e04f67]/40 bg-[#e04f67]/15 text-[#e04f67] hover:bg-[#e04f67]/25"
-                                      : cn(secondaryBtn, "hover:border-[#e04f67] hover:text-[#e04f67]"),
+                                      : cn(
+                                          secondaryBtn,
+                                          "hover:border-[#e04f67] hover:text-[#e04f67]",
+                                        ),
                                   )}
                                 >
                                   <Unlink size={12} />
@@ -2030,7 +2065,9 @@ export function AdminStudioView() {
                   onSubmit={handleStageTrack}
                   className={cn("sticky top-20 space-y-4 rounded-xl border p-5", panelBg)}
                 >
-                  <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
+                  <div
+                    className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}
+                  >
                     <div className="flex items-center gap-2">
                       <ListMusic size={16} className="text-[#5ce1b8]" />
                       <div>
@@ -2048,7 +2085,10 @@ export function AdminStudioView() {
                       <button
                         type="button"
                         onClick={resetTrackForm}
-                        className={cn("rounded-lg border px-2.5 py-1 text-xs font-medium", secondaryBtn)}
+                        className={cn(
+                          "rounded-lg border px-2.5 py-1 text-xs font-medium",
+                          secondaryBtn,
+                        )}
                       >
                         Reset to New
                       </button>
@@ -2326,7 +2366,12 @@ export function AdminStudioView() {
                             active ? activeRowBg : rowHover,
                           )}
                         >
-                          <div className={cn("h-12 w-12 shrink-0 overflow-hidden rounded-lg border", borderClass)}>
+                          <div
+                            className={cn(
+                              "h-12 w-12 shrink-0 overflow-hidden rounded-lg border",
+                              borderClass,
+                            )}
+                          >
                             <ArtworkImage
                               src={m.image}
                               alt={m.name}
@@ -2363,9 +2408,19 @@ export function AdminStudioView() {
                   onSubmit={handleStageMember}
                   className={cn("space-y-4 rounded-xl border p-6", panelBg)}
                 >
-                  <div className={cn("flex flex-wrap items-center justify-between gap-4 border-b pb-4", borderClass)}>
+                  <div
+                    className={cn(
+                      "flex flex-wrap items-center justify-between gap-4 border-b pb-4",
+                      borderClass,
+                    )}
+                  >
                     <div className="flex items-center gap-3.5">
-                      <div className={cn("h-14 w-14 shrink-0 overflow-hidden rounded-xl border", borderClass)}>
+                      <div
+                        className={cn(
+                          "h-14 w-14 shrink-0 overflow-hidden rounded-xl border",
+                          borderClass,
+                        )}
+                      >
                         <ArtworkImage
                           src={memberImage}
                           alt={memberName}
@@ -2616,7 +2671,9 @@ export function AdminStudioView() {
                   onSubmit={handleStageNews}
                   className={cn("sticky top-20 space-y-4 rounded-xl border p-5", panelBg)}
                 >
-                  <div className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}>
+                  <div
+                    className={cn("flex items-center justify-between border-b pb-3.5", borderClass)}
+                  >
                     <div className="flex items-center gap-2">
                       <FileText size={16} className="text-[#5ce1b8]" />
                       <div>
@@ -2634,7 +2691,10 @@ export function AdminStudioView() {
                       <button
                         type="button"
                         onClick={resetNewsForm}
-                        className={cn("rounded-lg border px-2.5 py-1 text-xs font-medium", secondaryBtn)}
+                        className={cn(
+                          "rounded-lg border px-2.5 py-1 text-xs font-medium",
+                          secondaryBtn,
+                        )}
                       >
                         Reset to New
                       </button>
@@ -2754,7 +2814,12 @@ export function AdminStudioView() {
               {/* Left 7 Cols: Active Home Screen Hero Carousel Slides */}
               <div className="lg:col-span-7">
                 <div className={cn("overflow-hidden rounded-xl border", panelBg)}>
-                  <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5", borderClass)}>
+                  <div
+                    className={cn(
+                      "flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3.5",
+                      borderClass,
+                    )}
+                  >
                     <div>
                       <h2 className={cn("text-sm font-semibold", headingText)}>
                         Active Home Screen Hero Slides ({heroImagesList.length})
@@ -2939,8 +3004,15 @@ export function AdminStudioView() {
                   </div>
 
                   {newHeroUrl.trim() && (
-                    <div className={cn("flex items-center gap-3 rounded-xl border p-2.5", subPanelBg)}>
-                      <div className={cn("h-14 w-20 shrink-0 overflow-hidden rounded-lg border", borderClass)}>
+                    <div
+                      className={cn("flex items-center gap-3 rounded-xl border p-2.5", subPanelBg)}
+                    >
+                      <div
+                        className={cn(
+                          "h-14 w-20 shrink-0 overflow-hidden rounded-lg border",
+                          borderClass,
+                        )}
+                      >
                         <img
                           src={newHeroUrl}
                           alt="New hero preview"
@@ -2979,14 +3051,22 @@ export function AdminStudioView() {
                         Welcome Tour Cover Photo (Slide 1)
                       </h3>
                       <p className={cn("font-mono text-[10px]", subText)}>
-                        Displayed inside the glowing frame on the &quot;Welcome to the Archive&quot; page
+                        Displayed inside the glowing frame on the &quot;Welcome to the Archive&quot;
+                        page
                       </p>
                     </div>
                   </div>
 
                   {activeWelcomePhoto && (
-                    <div className={cn("flex items-center gap-3.5 rounded-xl border p-3", subPanelBg)}>
-                      <div className={cn("h-16 w-16 shrink-0 overflow-hidden rounded-xl border", borderClass)}>
+                    <div
+                      className={cn("flex items-center gap-3.5 rounded-xl border p-3", subPanelBg)}
+                    >
+                      <div
+                        className={cn(
+                          "h-16 w-16 shrink-0 overflow-hidden rounded-xl border",
+                          borderClass,
+                        )}
+                      >
                         <img
                           src={activeWelcomePhoto}
                           alt="Welcome tour cover"
@@ -3085,11 +3165,15 @@ export function AdminStudioView() {
                       <p className={cn("mt-1 text-lg font-bold", headingText)}>{tracks.length}</p>
                     </div>
                     <div className={cn("rounded-lg border p-3", subPanelBg)}>
-                      <p className={cn("font-mono text-[10px] uppercase", mutedMonoText)}>Members</p>
+                      <p className={cn("font-mono text-[10px] uppercase", mutedMonoText)}>
+                        Members
+                      </p>
                       <p className={cn("mt-1 text-lg font-bold", headingText)}>{members.length}</p>
                     </div>
                     <div className={cn("rounded-lg border p-3", subPanelBg)}>
-                      <p className={cn("font-mono text-[10px] uppercase", mutedMonoText)}>News Items</p>
+                      <p className={cn("font-mono text-[10px] uppercase", mutedMonoText)}>
+                        News Items
+                      </p>
                       <p className={cn("mt-1 text-lg font-bold", headingText)}>{news.length}</p>
                     </div>
                   </div>
@@ -3105,7 +3189,9 @@ export function AdminStudioView() {
                       )}
                     >
                       <Sparkles size={14} />
-                      {busy ? "Seeding Firestore Collections..." : "Seed Complete Archive to Firestore"}
+                      {busy
+                        ? "Seeding Firestore Collections..."
+                        : "Seed Complete Archive to Firestore"}
                     </button>
                   </div>
                 </div>
@@ -3120,8 +3206,8 @@ export function AdminStudioView() {
                     <li className="flex items-start gap-2">
                       <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5ce1b8]" />
                       <span>
-                        <strong>YouTube &amp; 0ms Direct Audio:</strong> Upload an <code>.mp3</code> /{" "}
-                        <code>.m4a</code> file or paste a YouTube link into any song under{" "}
+                        <strong>YouTube &amp; 0ms Direct Audio:</strong> Upload an <code>.mp3</code>{" "}
+                        / <code>.m4a</code> file or paste a YouTube link into any song under{" "}
                         <em>Songs &amp; Audio</em> for real music playback synced with the glowing
                         progress bar.
                       </span>
@@ -3129,9 +3215,8 @@ export function AdminStudioView() {
                     <li className="flex items-start gap-2">
                       <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#e04f67]" />
                       <span>
-                        <strong>Atomic Batch Push:</strong> Clicking{" "}
-                        <em>Push Live Changes</em> commits all queued operations to Firestore in a
-                        single batch transaction.
+                        <strong>Atomic Batch Push:</strong> Clicking <em>Push Live Changes</em>{" "}
+                        commits all queued operations to Firestore in a single batch transaction.
                       </span>
                     </li>
                     <li className="flex items-start gap-2">

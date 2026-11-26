@@ -62,6 +62,17 @@ export function ExpandedPlayer() {
     }
   }, [expanded]);
 
+  // Allow Android hardware Back button to exit Fullscreen Lyrics back into Expanded Player
+  useEffect(() => {
+    if (!expanded || !lyricsFullscreen) return;
+    const handleBack = (e: Event) => {
+      e.preventDefault();
+      setLyricsFullscreen(false);
+    };
+    window.addEventListener("ive:android-back", handleBack);
+    return () => window.removeEventListener("ive:android-back", handleBack);
+  }, [expanded, lyricsFullscreen]);
+
   const { getAlbum, getTrackArtwork } = useCatalog();
 
   const originalLyrics = currentTrack?.lyricsKorean?.trim() ?? "";
@@ -148,9 +159,7 @@ export function ExpandedPlayer() {
             ? `translate3d(0, ${drag}px, 0) scale(${Math.max(0.92, 1 - drag / 1600)})`
             : "translate3d(0, 104%, 0) scale(0.96)",
           opacity: expanded ? Math.max(0.35, 1 - drag / 700) : 0,
-          transition: dragging
-            ? "none"
-            : "transform 0.36s var(--ease-spring), opacity 0.26s ease",
+          transition: dragging ? "none" : "transform 0.36s var(--ease-spring), opacity 0.26s ease",
         }}
         className="relative h-full w-full overflow-hidden overscroll-contain will-change-transform"
       >
@@ -342,10 +351,7 @@ export function ExpandedPlayer() {
             </div>
 
             {/* 5. SPOTIFY-STYLE GLASSMORPHISM INLINE LYRICS CARD (Below Controls, Before End Session) */}
-            <div
-              className="relative mt-6"
-              onPointerDown={(e) => e.stopPropagation()}
-            >
+            <div className="relative mt-6" onPointerDown={(e) => e.stopPropagation()}>
               {/* Soft outer ambient prism aura behind the glass card */}
               <div
                 aria-hidden="true"
@@ -384,9 +390,7 @@ export function ExpandedPlayer() {
                     <span className="grid h-6 w-6 place-items-center rounded-full border border-white/20 bg-white/10 text-primary backdrop-blur-md">
                       <Sparkles size={12} />
                     </span>
-                    <span className="text-sm font-bold tracking-tight text-foreground">
-                      Lyrics
-                    </span>
+                    <span className="text-sm font-bold tracking-tight text-foreground">Lyrics</span>
                   </div>
 
                   <div className="flex items-center gap-1.5">
@@ -551,9 +555,7 @@ export function ExpandedPlayer() {
               </button>
 
               <div className="min-w-0 flex-1 text-center">
-                <p className="truncate text-sm font-bold text-foreground">
-                  {currentTrack.title}
-                </p>
+                <p className="truncate text-sm font-bold text-foreground">{currentTrack.title}</p>
                 <p className="truncate text-xs text-foreground/75">
                   {currentTrack.artist ?? "IVE"} · {album?.title}
                 </p>
@@ -598,7 +600,8 @@ export function ExpandedPlayer() {
                   )}
                   <div className="pt-4 pb-2">
                     <p className="font-mono text-[10px] uppercase tracking-widest text-foreground/55">
-                      IVE: Dive Archive · {lyricLang === "original" ? originalScriptLabel : "Romanized"} Lyrics
+                      IVE: Dive Archive ·{" "}
+                      {lyricLang === "original" ? originalScriptLabel : "Romanized"} Lyrics
                     </p>
                   </div>
                 </div>
@@ -646,7 +649,12 @@ export function ExpandedPlayer() {
 
               {/* Row 2: Scrubber + Elapsed / Total Time */}
               <div>
-                <CurvedProgress progress={progress} total={total} onSeek={seek} variant="expanded" />
+                <CurvedProgress
+                  progress={progress}
+                  total={total}
+                  onSeek={seek}
+                  variant="expanded"
+                />
                 <div className="mt-1 flex justify-between text-[11px] font-medium tabular-nums text-foreground/75">
                   <span>{formatDuration(progress)}</span>
                   <span>{formatDuration(total)}</span>

@@ -78,10 +78,8 @@ export function CurvedProgress({
       ? "M 0 20 C 100 7, 100 33, 200 20 C 300 7, 300 33, 400 20 C 500 7, 500 33, 600 20 C 700 7, 700 33, 800 20 C 900 7, 900 33, 1000 20"
       : "M 0 20 C 125 6, 125 34, 250 20 C 375 6, 375 34, 500 20 C 625 6, 625 34, 750 20 C 875 6, 875 34, 1000 20";
 
-  const heightClass =
-    variant === "docked" ? "h-3.5" : variant === "compact" ? "h-4" : "h-8";
-  const strokeWidth =
-    variant === "docked" ? 3.4 : variant === "compact" ? 3.6 : 5.5;
+  const heightClass = variant === "docked" ? "h-3.5" : variant === "compact" ? "h-4" : "h-8";
+  const strokeWidth = variant === "docked" ? 3.4 : variant === "compact" ? 3.6 : 5.5;
   const dashOffset = 1000 - (pct / 100) * 1000;
 
   return (

@@ -53,7 +53,10 @@ function MusicPage() {
   const { favorites } = useFavorites();
   const recentIds = useRecentlyPlayed();
 
-  const recentTracks = useMemo(() => recentIds.map(getTrack).filter((t) => !!t), [recentIds, getTrack]);
+  const recentTracks = useMemo(
+    () => recentIds.map(getTrack).filter((t) => !!t),
+    [recentIds, getTrack],
+  );
 
   const visible = useMemo(() => {
     let list =
@@ -67,7 +70,7 @@ function MusicPage() {
               ? tracks.filter((t) => t.isSolo)
               : tracks;
 
-    if (mode === "all" || mode === "titles" || mode === "solos") {
+    if (mode === "all") {
       if (langFilter !== "all") {
         list = list.filter((t) => t.language === langFilter);
       }
@@ -213,8 +216,22 @@ function MusicPage() {
           ) : (
             <EmptyState
               icon={<ListMusic size={22} />}
-              title="No songs in this album yet"
-              description="Pick another album filter to keep listening."
+              title="No matching songs found"
+              description="Try switching language or album filters to keep listening."
+              action={
+                mode === "all" && (langFilter !== "all" || albumFilter !== "all") ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLangFilter("all");
+                      setAlbumFilter("all");
+                    }}
+                    className="press inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-xs font-semibold text-primary-foreground glow"
+                  >
+                    Reset filters
+                  </button>
+                ) : undefined
+              }
             />
           )}
         </div>

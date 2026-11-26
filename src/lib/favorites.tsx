@@ -20,7 +20,9 @@ const FavoritesContext = createContext<FavoritesContextValue | null>(null);
 function sanitizeIdList(raw: unknown, maxLen: number): string[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((item): item is string => typeof item === "string" && item.length > 0 && item.length <= 120)
+    .filter(
+      (item): item is string => typeof item === "string" && item.length > 0 && item.length <= 120,
+    )
     .slice(0, maxLen);
 }
 

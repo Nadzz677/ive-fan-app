@@ -244,7 +244,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const { tracks: catalogTracks, config } = useCatalog();
 
   const [currentId, setCurrentId] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
+    if (typeof window === "undefined" || !settings.rememberPlayback) return null;
     try {
       const raw = window.localStorage.getItem(LAST_TRACK_KEY);
       if (raw && getLiveTrack(raw)) return raw;
@@ -385,16 +385,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    if (!settings.rememberPlayback && typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(LAST_TRACK_KEY);
+      } catch {
+        /* storage unavailable */
+      }
+    }
+  }, [settings.rememberPlayback]);
+
   const remember = useCallback(
     (trackId: string) => {
       if (settings.trackRecentlyPlayed) pushRecentlyPlayed(trackId);
+      if (!settings.rememberPlayback) return;
       try {
         window.localStorage.setItem(LAST_TRACK_KEY, trackId);
       } catch {
         /* storage unavailable */
       }
     },
-    [settings.trackRecentlyPlayed],
+    [settings.trackRecentlyPlayed, settings.rememberPlayback],
   );
 
   const commandYouTubeImmediate = useCallback((nextVideoId: string | null, startSec = 0) => {
@@ -421,7 +432,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const playTrack = useCallback(
     (trackId: string, nextQueue?: string[]) => {
-      if (nextQueue?.length) setQueue(nextQueue);
+      if (!trackId) return;
+      if (nextQueue?.length) {
+        setQueue(nextQueue);
+      } else if (!queue.includes(trackId)) {
+        setQueue(catalogTracks.map((t) => t.id));
+      }
       const targetTrack =
         catalogTracks.find((t) => t.id === trackId) ?? getLiveTrack(trackId) ?? null;
       const targetDirectAudio = getInstantAudioSrc(targetTrack?.audioUrl);
@@ -451,34 +467,38 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         commandYouTubeImmediate(targetYtId, 0);
       }
     },
-    [catalogTracks, clearSeekLock, commandYouTubeImmediate, remember],
+    [catalogTracks, clearSeekLock, commandYouTubeImmediate, queue, remember],
   );
 
   const step = useCallback(
     (delta: number) => {
       if (!currentId) return;
-      const idx = queue.indexOf(currentId);
+      const activeQueue = queue.includes(currentId) ? queue : catalogTracks.map((t) => t.id);
+      if (activeQueue !== queue && activeQueue.length > 0) {
+        setQueue(activeQueue);
+      }
+      const idx = activeQueue.indexOf(currentId);
       if (idx === -1) return;
       let nextId = currentId;
 
-      if (shuffle && queue.length > 1) {
+      if (shuffle && activeQueue.length > 1) {
         if (delta > 0) {
           historyRef.current.push(currentId);
           if (historyRef.current.length > 50) historyRef.current.shift();
-          const pool = queue.filter((id) => id !== currentId);
+          const pool = activeQueue.filter((id) => id !== currentId);
           nextId = pool[Math.floor(Math.random() * pool.length)] ?? currentId;
         } else {
           const prevFromHistory = historyRef.current.pop();
-          if (prevFromHistory && queue.includes(prevFromHistory)) {
+          if (prevFromHistory && activeQueue.includes(prevFromHistory)) {
             nextId = prevFromHistory;
           } else {
-            const pool = queue.filter((id) => id !== currentId);
+            const pool = activeQueue.filter((id) => id !== currentId);
             nextId = pool[Math.floor(Math.random() * pool.length)] ?? currentId;
           }
         }
       } else {
-        const nextIdx = (idx + delta + queue.length) % queue.length;
-        nextId = queue[nextIdx] ?? currentId;
+        const nextIdx = (idx + delta + activeQueue.length) % activeQueue.length;
+        nextId = activeQueue[nextIdx] ?? currentId;
       }
 
       const targetTrack =
@@ -998,11 +1018,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (typeof navigator === "undefined" || !("mediaSession" in navigator) || !currentTrack) return;
     try {
       const artworkUrl = getLiveTrackArtwork(currentTrack);
+      const albumTitle = getLiveAlbum(currentTrack.albumId)?.title ?? "IVE Archive";
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.title,
         artist: currentTrack.artist ?? "IVE",
-        album: currentTrack.albumId,
-        ...(artworkUrl ? { artwork: [{ src: artworkUrl, sizes: "512x512", type: "image/png" }] } : {}),
+        album: albumTitle,
+        ...(artworkUrl
+          ? { artwork: [{ src: artworkUrl, sizes: "512x512", type: "image/png" }] }
+          : {}),
       });
       navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
       navigator.mediaSession.setActionHandler("play", () => setIsPlaying(true));
