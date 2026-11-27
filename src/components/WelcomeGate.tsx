@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight, Disc3, Palette, Rocket, Sparkles, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { DEFAULT_HERO_IMAGES, useCatalog, useStagedCatalog } from "@/lib/catalog";
+import { STUDIO_ROUTE_PATH } from "@/lib/studio-route";
 import { THEMES } from "@/lib/theme";
 import { getAlbumArtwork, getMemberImage } from "@/data/imageAssets";
 import { ArtworkImage } from "./ArtworkImage";
@@ -67,7 +68,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
     return () => window.cancelAnimationFrame(frameId);
   }, [isWelcomeVisible]);
 
-  // Render the Fan App once onboarding is completed (with a live preview return bar if opened from /admin).
+  // Render the Fan App once onboarding is completed (with a live preview return bar if opened from the Studio console).
   if (hasCompletedOnboarding) {
     if (!isNative && isPreviewingFanApp) {
       return (
@@ -100,7 +101,7 @@ export function WelcomeGate({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => {
                   setPreviewingFanApp(false);
-                  void navigate({ to: "/admin" });
+                  void navigate({ to: STUDIO_ROUTE_PATH });
                 }}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-[#5ce1b8] px-3.5 py-1.5 text-xs font-semibold text-[#142026] shadow-sm transition-colors hover:bg-[#4dd4aa]"
               >

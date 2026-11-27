@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { Disc3, Heart, Home, ListMusic, Users } from "lucide-react";
 import { useFavorites } from "@/lib/favorites";
+import { STUDIO_ROUTE_PATH } from "@/lib/studio-route";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -159,7 +160,7 @@ export function BottomNav() {
     };
   }, []);
 
-  if (pathname.startsWith("/admin")) return null;
+  if (pathname.startsWith(STUDIO_ROUTE_PATH)) return null;
 
   const computeFloatIndexFromClientX = (clientX: number) => {
     const el = trackRef.current;

@@ -2,12 +2,12 @@ import { lazy, Suspense } from "react";
 import { Capacitor } from "@capacitor/core";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 
-const LazyAdminStudioView = lazy(() =>
-  import("@/components/AdminStudioView").then((m) => ({ default: m.AdminStudioView })),
+const LazyStudioWorkspaceView = lazy(() =>
+  import("@/components/StudioWorkspaceView").then((m) => ({ default: m.StudioWorkspaceView })),
 );
 
-function AdminRouteComponent() {
-  // Never expose the Admin Console inside the native mobile APK
+function StudioRouteComponent() {
+  // Never expose the Studio Console inside the native mobile APK
   if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
     return <Navigate to="/" replace />;
   }
@@ -16,21 +16,18 @@ function AdminRouteComponent() {
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center bg-[#1f262d] font-mono text-xs uppercase tracking-[0.22em] text-[#90a0b0]">
-          Loading Admin Studio…
+          Loading Workspace…
         </div>
       }
     >
-      <LazyAdminStudioView />
+      <LazyStudioWorkspaceView />
     </Suspense>
   );
 }
 
-export const Route = createFileRoute("/admin")({
+export const Route = createFileRoute("/dive-studio-677")({
   head: () => ({
-    meta: [
-      { title: "Admin Studio — IVE: Dive Archive" },
-      { name: "robots", content: "noindex, nofollow" },
-    ],
+    meta: [{ title: "D.I.V.E. Workspace" }, { name: "robots", content: "noindex, nofollow" }],
   }),
-  component: AdminRouteComponent,
+  component: StudioRouteComponent,
 });

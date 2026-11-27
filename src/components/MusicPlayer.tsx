@@ -4,6 +4,7 @@ import { Pause, Play, Shuffle, SkipBack, SkipForward } from "lucide-react";
 import { trackDuration } from "@/data/albums";
 import { useCatalog } from "@/lib/catalog";
 import { usePlayer } from "@/lib/player";
+import { STUDIO_ROUTE_PATH } from "@/lib/studio-route";
 import { cn } from "@/lib/utils";
 import { ArtworkImage } from "./ArtworkImage";
 import { CurvedProgress } from "./CurvedProgress";
@@ -50,7 +51,7 @@ export function MusicPlayer() {
 
   const { getAlbum, getTrackArtwork } = useCatalog();
 
-  if (!currentTrack || pathname.startsWith("/admin")) return null;
+  if (!currentTrack || pathname.startsWith(STUDIO_ROUTE_PATH)) return null;
 
   const album = getAlbum(currentTrack.albumId);
   const total = effectiveDuration || trackDuration(currentTrack);

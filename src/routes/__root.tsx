@@ -18,6 +18,7 @@ import { PlayerProvider } from "../lib/player";
 import { ThemeProvider } from "../lib/theme";
 import { SettingsProvider } from "../lib/settings";
 import { AuthProvider } from "../lib/auth";
+import { STUDIO_ROUTE_PATH } from "../lib/studio-route";
 import { MusicPlayer } from "../components/MusicPlayer";
 import { ExpandedPlayer } from "../components/ExpandedPlayer";
 import { BottomNav } from "../components/BottomNav";
@@ -145,7 +146,8 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const isDesktopAdminRoute = !Capacitor.isNativePlatform() && pathname.startsWith("/admin");
+  const isDesktopAdminRoute =
+    !Capacitor.isNativePlatform() && pathname.startsWith(STUDIO_ROUTE_PATH);
 
   return (
     <QueryClientProvider client={queryClient}>

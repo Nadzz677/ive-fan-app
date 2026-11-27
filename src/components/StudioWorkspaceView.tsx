@@ -174,18 +174,18 @@ function AdminLoginGate({
               <Lock size={16} />
             </div>
             <div>
-              <h1 className={cn("text-base font-semibold", headingText)}>Administrator Sign-In</h1>
-              <p className={cn("text-[11px]", subText)}>Project: ive-dive-archive</p>
+              <h1 className={cn("text-base font-semibold", headingText)}>Workspace Sign-In</h1>
+              <p className={cn("text-[11px]", subText)}>D.I.V.E. Content Studio</p>
             </div>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label htmlFor="admin-email" className={labelClass}>
-                Administrator Email
+              <label htmlFor="studio-email" className={labelClass}>
+                Account Email
               </label>
               <input
-                id="admin-email"
+                id="studio-email"
                 name="email"
                 type="email"
                 autoComplete="username"
@@ -196,16 +196,16 @@ function AdminLoginGate({
                 required
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="admin@ivedivearchive.com"
+                placeholder="you@example.com"
                 className={inputClass}
               />
             </div>
             <div>
-              <label htmlFor="admin-password" className={labelClass}>
+              <label htmlFor="studio-password" className={labelClass}>
                 Password
               </label>
               <input
-                id="admin-password"
+                id="studio-password"
                 name="password"
                 type="password"
                 autoComplete="current-password"
@@ -236,7 +236,7 @@ function AdminLoginGate({
               )}
             >
               <ShieldCheck size={15} />
-              {busy ? "Authenticating..." : "Authenticate & Open Console"}
+              {busy ? "Authenticating..." : "Sign In to Workspace"}
             </button>
           </form>
         </div>
@@ -249,13 +249,13 @@ function AdminLoginGate({
           mutedMonoText,
         )}
       >
-        IVE: DIVE ARCHIVE BACK-OFFICE CMS · AUTHORIZED ACCESS ONLY
+        IVE: DIVE ARCHIVE WORKSPACE · AUTHORIZED ACCESS ONLY
       </footer>
     </div>
   );
 }
 
-export function AdminStudioView() {
+export function StudioWorkspaceView() {
   const { isAdmin, email, signInAdmin, signOutAdmin, setPreviewingFanApp } = useAuth();
   const navigate = useNavigate();
 

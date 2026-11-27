@@ -10,7 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminRouteImport } from './routes/admin'
+import { Route as DiveStudio677RouteImport } from './routes/dive-studio-677'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as MusicRouteImport } from './routes/music'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -24,9 +24,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const DiveStudio677Route = DiveStudio677RouteImport.update({
+  id: '/dive-studio-677',
+  path: '/dive-studio-677',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FavoritesRoute = FavoritesRouteImport.update({
@@ -67,7 +67,7 @@ const MembersMemberIdRoute = MembersMemberIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/dive-studio-677': typeof DiveStudio677Route
   '/favorites': typeof FavoritesRoute
   '/music': typeof MusicRoute
   '/settings': typeof SettingsRoute
@@ -78,7 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/dive-studio-677': typeof DiveStudio677Route
   '/favorites': typeof FavoritesRoute
   '/music': typeof MusicRoute
   '/settings': typeof SettingsRoute
@@ -90,7 +90,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/admin': typeof AdminRoute
+  '/dive-studio-677': typeof DiveStudio677Route
   '/favorites': typeof FavoritesRoute
   '/music': typeof MusicRoute
   '/settings': typeof SettingsRoute
@@ -103,7 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/admin'
+    | '/dive-studio-677'
     | '/favorites'
     | '/music'
     | '/settings'
@@ -114,7 +114,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/admin'
+    | '/dive-studio-677'
     | '/favorites'
     | '/music'
     | '/settings'
@@ -125,7 +125,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/admin'
+    | '/dive-studio-677'
     | '/favorites'
     | '/music'
     | '/settings'
@@ -137,7 +137,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AdminRoute: typeof AdminRoute
+  DiveStudio677Route: typeof DiveStudio677Route
   FavoritesRoute: typeof FavoritesRoute
   MusicRoute: typeof MusicRoute
   SettingsRoute: typeof SettingsRoute
@@ -156,11 +156,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
+    '/dive-studio-677': {
+      id: '/dive-studio-677'
+      path: '/dive-studio-677'
+      fullPath: '/dive-studio-677'
+      preLoaderRoute: typeof DiveStudio677RouteImport
       parentRoute: typeof rootRouteImport
     }
     '/favorites': {
@@ -217,7 +217,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AdminRoute: AdminRoute,
+  DiveStudio677Route: DiveStudio677Route,
   FavoritesRoute: FavoritesRoute,
   MusicRoute: MusicRoute,
   SettingsRoute: SettingsRoute,
