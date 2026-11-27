@@ -195,10 +195,6 @@ function ensureYouTubeIframeApi(): Promise<YTGlobal> {
   return ytApiPromise;
 }
 
-if (typeof window !== "undefined") {
-  void ensureYouTubeIframeApi().catch(() => {});
-}
-
 interface PlayerContextValue {
   currentTrack: Track | null;
   isPlaying: boolean;

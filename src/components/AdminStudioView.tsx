@@ -97,30 +97,249 @@ function formatDurationMmSs(seconds?: number) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+function AdminLoginGate({
+  isLight,
+  toggleColorMode,
+  isCloudEnabled,
+  onOpenFanPreview,
+  onSignIn,
+}: {
+  isLight: boolean;
+  toggleColorMode: () => void;
+  isCloudEnabled: boolean;
+  onOpenFanPreview: () => void;
+  onSignIn: (email: string, password: string) => Promise<void>;
+}) {
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const {
+    shellBg,
+    chromeBg,
+    chromeHeaderBg,
+    panelBg,
+    borderClass,
+    headingText,
+    subText,
+    mutedMonoText,
+    secondaryBtn,
+    primaryBtn,
+    inputClass,
+    labelClass,
+  } = getAdminTheme(isLight);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setBusy(true);
+    try {
+      await onSignIn(loginEmail, loginPassword);
+      setLoginPassword("");
+    } catch (err: unknown) {
+      setLoginError(err instanceof Error ? err.message : "Sign-in failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-screen flex-col justify-between transition-colors selection:bg-[#5ce1b8] selection:text-[#181e24]",
+        shellBg,
+      )}
+    >
+      {/* Top System Bar */}
+      <header className={cn("flex items-center justify-between border-b px-6 py-3.5", chromeBg)}>
+        <div className="flex items-center gap-3">
+          {/* M.R.A. Dual-Arc Mint & Coral Logo Mark */}
+          <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#181e24] shadow-sm ring-1 ring-white/10">
+            <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+              <path
+                d="M7 15.5L11.5 20L19 9"
+                stroke="#5ce1b8"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M14 5A9 9 0 1 1 6.5 19"
+                stroke="#e04f67"
+                strokeWidth="2.6"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold tracking-tight text-white">Dive Archive</span>
+              <span className="rounded-full bg-[#e04f67] px-2 py-0.5 font-mono text-[10px] font-semibold text-white">
+                CMS
+              </span>
+            </div>
+            <p className="text-[11px] text-[#b4c2ce]">
+              Firestore Content Management &amp; Live Audio Sync Console
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleColorMode}
+            title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+              secondaryBtn,
+            )}
+          >
+            {isLight ? (
+              <>
+                <Moon size={14} className="text-[#e04f67]" /> Dark
+              </>
+            ) : (
+              <>
+                <Sun size={14} className="text-[#5ce1b8]" /> Light
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenFanPreview}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-medium transition-colors",
+              secondaryBtn,
+            )}
+          >
+            <Eye size={14} className="text-[#5ce1b8]" />
+            Preview Fan App
+          </button>
+        </div>
+      </header>
+
+      {/* Center Sign-In Card */}
+      <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
+        <div className={cn("rounded-2xl border p-7", panelBg)}>
+          <div className={cn("mb-6 flex items-center justify-between border-b pb-4", borderClass)}>
+            <div className="flex items-center gap-2.5">
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#5ce1b8]/15 text-[#5ce1b8] ring-1 ring-[#5ce1b8]/30">
+                <Lock size={16} />
+              </div>
+              <div>
+                <h1 className={cn("text-base font-semibold", headingText)}>
+                  Administrator Sign-In
+                </h1>
+                <p className={cn("text-[11px]", subText)}>Project: ive-dive-archive</p>
+              </div>
+            </div>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-medium",
+                isCloudEnabled
+                  ? "border border-[#5ce1b8]/30 bg-[#5ce1b8]/15 text-[#5ce1b8]"
+                  : "border border-[#f5c43d]/30 bg-[#f5c43d]/15 text-[#f5c43d]",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  isCloudEnabled ? "bg-[#5ce1b8]" : "bg-[#f5c43d]",
+                )}
+              />
+              {isCloudEnabled ? "FIRESTORE ONLINE" : "CONNECTING"}
+            </span>
+          </div>
+
+          {!isCloudEnabled ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-500">
+              Connecting to Firebase project... Verify that <code>.env</code> contains your{" "}
+              <code>VITE_FIREBASE_*</code> credentials.
+            </div>
+          ) : (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label htmlFor="admin-email" className={labelClass}>
+                  Administrator Email
+                </label>
+                <input
+                  id="admin-email"
+                  name="email"
+                  type="email"
+                  autoComplete="username"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  spellCheck={false}
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="admin@ivedivearchive.com"
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="admin-password" className={labelClass}>
+                  Password
+                </label>
+                <input
+                  id="admin-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className={inputClass}
+                />
+              </div>
+
+              {loginError && (
+                <div className="flex items-start gap-2 rounded-lg border border-[#e04f67]/30 bg-[#e04f67]/10 p-3 text-xs text-[#e04f67]">
+                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                  <span>{loginError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={busy}
+                className={cn(
+                  "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
+                  primaryBtn,
+                )}
+              >
+                <ShieldCheck size={15} />
+                {busy ? "Authenticating..." : "Authenticate & Open Console"}
+              </button>
+            </form>
+          )}
+        </div>
+      </main>
+
+      <footer
+        className={cn(
+          "border-t px-6 py-3 text-center font-mono text-[11px]",
+          chromeHeaderBg,
+          mutedMonoText,
+        )}
+      >
+        IVE: DIVE ARCHIVE BACK-OFFICE CMS · AUTHORIZED ACCESS ONLY
+      </footer>
+    </div>
+  );
+}
+
 export function AdminStudioView() {
   const { isAdmin, email, signInAdmin, signOutAdmin, isCloudEnabled, setPreviewingFanApp } =
     useAuth();
-  const { albums, tracks, members, news, config, getAlbumTracks } = useCatalog();
-  const { changes, pendingCount } = useStagedCatalog();
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
-
-  const handleOpenFanPreview = () => {
-    setPreviewingFanApp(true);
-    void navigate({ to: "/" });
-  };
-
-  const [tab, setTab] = useState<AdminTab>("albums");
-  const [status, setStatus] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [globalSearch, setGlobalSearch] = useState("");
-
-  // Home Hero Photo Carousel & Welcome Tour Cover Photo Manager state
-  const [newHeroUrl, setNewHeroUrl] = useState("");
-  const [uploadingHero, setUploadingHero] = useState(false);
-  const [heroUploadProgress, setHeroUploadProgress] = useState(0);
-  const [welcomePhotoInput, setWelcomePhotoInput] = useState("");
-  const [uploadingWelcomePhoto, setUploadingWelcomePhoto] = useState(false);
 
   // Admin Light / Dark theme state (persisted in localStorage)
   const [colorMode, setColorMode] = useState<AdminColorMode>(() => {
@@ -147,10 +366,63 @@ export function AdminStudioView() {
     });
   };
 
-  // Admin Login form
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState<string | null>(null);
+  const handleOpenFanPreview = () => {
+    setPreviewingFanApp(true);
+    void navigate({ to: "/" });
+  };
+
+  if (!isAdmin) {
+    return (
+      <AdminLoginGate
+        isLight={isLight}
+        toggleColorMode={toggleColorMode}
+        isCloudEnabled={isCloudEnabled}
+        onOpenFanPreview={handleOpenFanPreview}
+        onSignIn={signInAdmin}
+      />
+    );
+  }
+
+  return (
+    <AdminStudioWorkspace
+      email={email}
+      isLight={isLight}
+      toggleColorMode={toggleColorMode}
+      onOpenFanPreview={handleOpenFanPreview}
+      signOutAdmin={signOutAdmin}
+    />
+  );
+}
+
+function AdminStudioWorkspace({
+  email,
+  isLight,
+  toggleColorMode,
+  onOpenFanPreview,
+  signOutAdmin,
+}: {
+  email: string | null;
+  isLight: boolean;
+  toggleColorMode: () => void;
+  onOpenFanPreview: () => void;
+  signOutAdmin: () => Promise<void>;
+}) {
+  const { albums, tracks, members, news, config, getAlbumTracks } = useCatalog();
+  const { changes, pendingCount } = useStagedCatalog();
+  const queryClient = useQueryClient();
+  const handleOpenFanPreview = onOpenFanPreview;
+
+  const [tab, setTab] = useState<AdminTab>("albums");
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+
+  // Home Hero Photo Carousel & Welcome Tour Cover Photo Manager state
+  const [newHeroUrl, setNewHeroUrl] = useState("");
+  const [uploadingHero, setUploadingHero] = useState(false);
+  const [heroUploadProgress, setHeroUploadProgress] = useState(0);
+  const [welcomePhotoInput, setWelcomePhotoInput] = useState("");
+  const [uploadingWelcomePhoto, setUploadingWelcomePhoto] = useState(false);
 
   // Album Editor form (supports both Add New & Edit Existing)
   const [editingAlbumId, setEditingAlbumId] = useState<string | null>(null);
@@ -224,20 +496,6 @@ export function AdminStudioView() {
 
   const refreshCatalog = async () => {
     await queryClient.invalidateQueries({ queryKey: ["catalog"] });
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError(null);
-    setBusy(true);
-    try {
-      await signInAdmin(loginEmail, loginPassword);
-      setLoginPassword("");
-    } catch (err: unknown) {
-      setLoginError(err instanceof Error ? err.message : "Sign-in failed.");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const resetAlbumForm = () => {
@@ -703,29 +961,46 @@ export function AdminStudioView() {
   const activeFeaturedAlbum = albums.find((a) => a.id === config.featuredAlbumId) ?? albums[0];
   const activeFeaturedTrack = tracks.find((t) => t.id === config.featuredTrackId) ?? tracks[0];
   const currentAlbumForTracks = albums.find((a) => a.id === selectedAlbumId) ?? albums[0];
-  const baseDisplayedTracks = trackViewFilter === "ALL" ? tracks : getAlbumTracks(trackViewFilter);
-  const selectedAlbumTracks = baseDisplayedTracks.filter((t) => {
-    const hasLink = Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl));
-    if (trackAudioStatusFilter === "linked" && !hasLink) return false;
-    if (trackAudioStatusFilter === "missing" && hasLink) return false;
-    if (trackSearchQuery.trim()) {
-      const q = trackSearchQuery.toLowerCase().trim();
-      const parentTitle = albums.find((a) => a.id === t.albumId)?.title.toLowerCase() ?? "";
-      return (
-        t.title.toLowerCase().includes(q) ||
-        t.id.toLowerCase().includes(q) ||
-        parentTitle.includes(q)
-      );
-    }
-    return true;
-  });
-  const parsedYoutubeIdPreview = extractYouTubeId(trackYoutubeUrl);
-  const parsedDirectAudioPreview = resolveDirectAudioUrl(trackAudioUrl);
+
+  const selectedAlbumTracks = useMemo(() => {
+    const baseDisplayed = trackViewFilter === "ALL" ? tracks : getAlbumTracks(trackViewFilter);
+    const q = trackSearchQuery.toLowerCase().trim();
+    return baseDisplayed.filter((t) => {
+      const hasLink = Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl));
+      if (trackAudioStatusFilter === "linked" && !hasLink) return false;
+      if (trackAudioStatusFilter === "missing" && hasLink) return false;
+      if (q) {
+        const parentTitle = albums.find((a) => a.id === t.albumId)?.title.toLowerCase() ?? "";
+        return (
+          t.title.toLowerCase().includes(q) ||
+          t.id.toLowerCase().includes(q) ||
+          parentTitle.includes(q)
+        );
+      }
+      return true;
+    });
+  }, [trackViewFilter, tracks, getAlbumTracks, trackAudioStatusFilter, trackSearchQuery, albums]);
+
+  const parsedYoutubeIdPreview = useMemo(
+    () => extractYouTubeId(trackYoutubeUrl),
+    [trackYoutubeUrl],
+  );
+  const parsedDirectAudioPreview = useMemo(
+    () => resolveDirectAudioUrl(trackAudioUrl),
+    [trackAudioUrl],
+  );
   const isSpotifyLinkWarning = trackAudioUrl.toLowerCase().includes("spotify.com");
-  const itunesPreviewTracksCount = tracks.filter((t) => isItunesPreviewUrl(t.audioUrl)).length;
-  const tracksWithAudioCount = tracks.filter((t) =>
-    Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl)),
-  ).length;
+  const itunesPreviewTracksCount = useMemo(
+    () => tracks.filter((t) => isItunesPreviewUrl(t.audioUrl)).length,
+    [tracks],
+  );
+  const tracksWithAudioCount = useMemo(
+    () =>
+      tracks.filter((t) =>
+        Boolean(extractYouTubeId(t.youtubeUrl) || resolveDirectAudioUrl(t.audioUrl)),
+      ).length,
+    [tracks],
+  );
 
   const navItems: {
     id: AdminTab;
@@ -880,188 +1155,7 @@ export function AdminStudioView() {
   const adminInitials = (adminDisplayName || "DA").slice(0, 2).toUpperCase();
 
   // ---------------------------------------------------------------------------
-  // 1. UNAUTHENTICATED VIEW: M.R.A. Slate-Petrol & Mint/Coral Admin Sign-In Gate
-  // ---------------------------------------------------------------------------
-  if (!isAdmin) {
-    return (
-      <div
-        className={cn(
-          "flex min-h-screen flex-col justify-between transition-colors selection:bg-[#5ce1b8] selection:text-[#181e24]",
-          shellBg,
-        )}
-      >
-        {/* Top System Bar */}
-        <header className={cn("flex items-center justify-between border-b px-6 py-3.5", chromeBg)}>
-          <div className="flex items-center gap-3">
-            {/* M.R.A. Dual-Arc Mint & Coral Logo Mark */}
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#181e24] shadow-sm ring-1 ring-white/10">
-              <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-                <path
-                  d="M7 15.5L11.5 20L19 9"
-                  stroke="#5ce1b8"
-                  strokeWidth="2.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M14 5A9 9 0 1 1 6.5 19"
-                  stroke="#e04f67"
-                  strokeWidth="2.6"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-bold tracking-tight text-white">Dive Archive</span>
-                <span className="rounded-full bg-[#e04f67] px-2 py-0.5 font-mono text-[10px] font-semibold text-white">
-                  CMS
-                </span>
-              </div>
-              <p className="text-[11px] text-[#b4c2ce]">
-                Firestore Content Management &amp; Live Audio Sync Console
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={toggleColorMode}
-              title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
-                secondaryBtn,
-              )}
-            >
-              {isLight ? (
-                <>
-                  <Moon size={14} className="text-[#e04f67]" /> Dark
-                </>
-              ) : (
-                <>
-                  <Sun size={14} className="text-[#5ce1b8]" /> Light
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleOpenFanPreview}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-medium transition-colors",
-                secondaryBtn,
-              )}
-            >
-              <Eye size={14} className="text-[#5ce1b8]" />
-              Preview Fan App
-            </button>
-          </div>
-        </header>
-
-        {/* Center Sign-In Card */}
-        <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
-          <div className={cn("rounded-2xl border p-7", panelBg)}>
-            <div
-              className={cn("mb-6 flex items-center justify-between border-b pb-4", borderClass)}
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#5ce1b8]/15 text-[#5ce1b8] ring-1 ring-[#5ce1b8]/30">
-                  <Lock size={16} />
-                </div>
-                <div>
-                  <h1 className={cn("text-base font-semibold", headingText)}>
-                    Administrator Sign-In
-                  </h1>
-                  <p className={cn("text-[11px]", subText)}>Project: ive-dive-archive</p>
-                </div>
-              </div>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-medium",
-                  isCloudEnabled
-                    ? "border border-[#5ce1b8]/30 bg-[#5ce1b8]/15 text-[#5ce1b8]"
-                    : "border border-[#f5c43d]/30 bg-[#f5c43d]/15 text-[#f5c43d]",
-                )}
-              >
-                <span
-                  className={cn(
-                    "h-1.5 w-1.5 rounded-full",
-                    isCloudEnabled ? "bg-[#5ce1b8]" : "bg-[#f5c43d]",
-                  )}
-                />
-                {isCloudEnabled ? "FIRESTORE ONLINE" : "CONNECTING"}
-              </span>
-            </div>
-
-            {!isCloudEnabled ? (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-500">
-                Connecting to Firebase project... Verify that <code>.env</code> contains your
-                <code>VITE_FIREBASE_*</code> credentials.
-              </div>
-            ) : (
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <label className={labelClass}>Administrator Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="admin@ivedivearchive.com"
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className={inputClass}
-                  />
-                </div>
-
-                {loginError && (
-                  <div className="flex items-start gap-2 rounded-lg border border-[#e04f67]/30 bg-[#e04f67]/10 p-3 text-xs text-[#e04f67]">
-                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                    <span>{loginError}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className={cn(
-                    "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
-                    primaryBtn,
-                  )}
-                >
-                  <ShieldCheck size={15} />
-                  {busy ? "Authenticating..." : "Authenticate & Open Console"}
-                </button>
-              </form>
-            )}
-          </div>
-        </main>
-
-        <footer
-          className={cn(
-            "border-t px-6 py-3 text-center font-mono text-[11px]",
-            chromeHeaderBg,
-            mutedMonoText,
-          )}
-        >
-          IVE: DIVE ARCHIVE BACK-OFFICE CMS · AUTHORIZED ACCESS ONLY
-        </footer>
-      </div>
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // 2. AUTHENTICATED VIEW: M.R.A. Slate-Petrol Sidebar + Charcoal-Slate Workspace
+  // AUTHENTICATED VIEW: M.R.A. Slate-Petrol Sidebar + Charcoal-Slate Workspace
   // ---------------------------------------------------------------------------
   return (
     <div

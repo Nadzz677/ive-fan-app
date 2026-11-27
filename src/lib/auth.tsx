@@ -162,7 +162,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const cred = await signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password);
+      const cred = await Promise.race([
+        signInWithEmailAndPassword(firebaseAuth, normalizedEmail, password),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Sign-in timed out. Check your connection or browser shields and try again.",
+                ),
+              ),
+            15_000,
+          );
+        }),
+      ]);
       let authorized = cred.user.uid === FALLBACK_ADMIN_UID;
       if (!authorized) {
         const tokenResult = await cred.user.getIdTokenResult().catch(() => null);
@@ -186,6 +199,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (code === "auth/too-many-requests") {
         lockoutUntilRef.current = Date.now() + LOCKOUT_DURATION_MS;
         throw new Error("Too many sign-in attempts. Please wait before trying again.");
+      }
+      if (err instanceof Error && err.message.startsWith("Sign-in timed out.")) {
+        throw err;
       }
       if (err instanceof Error && err.message === GENERIC_AUTH_ERROR) {
         throw err;

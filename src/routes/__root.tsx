@@ -85,6 +85,9 @@ function ErrorComponent({ error, reset }: { error: unknown; reset: () => void })
   );
 }
 
+const isSpaContainerMount =
+  typeof document !== "undefined" && document.getElementById("root") !== null;
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
@@ -119,7 +122,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
     ],
   }),
-  shellComponent: RootShell,
+  ...(isSpaContainerMount ? {} : { shellComponent: RootShell }),
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
