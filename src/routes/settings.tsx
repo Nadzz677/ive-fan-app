@@ -1,25 +1,27 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Capacitor } from "@capacitor/core";
 import {
   Check,
   ChevronRight,
   Cloud,
   CloudOff,
-  Heart,
-  History,
-  ListMusic,
+  Copyright,
+  FileText,
+  HelpCircle,
+  Lock,
   Palette,
   Sparkles,
-  Trash2,
+  User,
 } from "lucide-react";
 import { PageHeader, SectionHeader } from "@/components/PageHeader";
 import { BackLink } from "@/components/BackLink";
+import { LegalInfoModal } from "@/components/LegalInfoModal";
+import { LEGAL_META, type LegalDocId } from "@/data/legal";
 import { useTheme } from "@/lib/theme";
 import { useSettings } from "@/lib/settings";
-import { useFavorites } from "@/lib/favorites";
 import { useAuth } from "@/lib/auth";
 import { isFirebaseConfigured } from "@/lib/firebase";
-import { clearRecentlyPlayed, useRecentlyPlayed } from "@/lib/recently-played";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/settings")({
@@ -28,20 +30,19 @@ export const Route = createFileRoute("/settings")({
       { title: "Settings — IVE: Dive Archive" },
       {
         name: "description",
-        content:
-          "Choose an album theme, tune playback behaviour and manage your saved IVE library.",
+        content: "Choose an album theme, tune playback behaviour and view IVE: Dive Archive info.",
       },
       { property: "og:title", content: "Settings — IVE: Dive Archive" },
       {
         property: "og:description",
-        content: "Album themes, playback preferences and library controls for IVE: Dive Archive.",
+        content: "Album themes, playback preferences and project info for IVE: Dive Archive.",
       },
     ],
   }),
   component: SettingsPage,
 });
 
-const APP_VERSION = "5.4.0";
+const APP_VERSION = "1.0.0";
 
 function ToggleRow({
   label,
@@ -86,7 +87,6 @@ function ToggleRow({
 function SettingsPage() {
   const { theme, setTheme, themes } = useTheme();
   const { settings, setSetting } = useSettings();
-  const { count } = useFavorites();
   const {
     uid,
     isCloudEnabled,
@@ -95,16 +95,16 @@ function SettingsPage() {
     error: authError,
     replayOnboarding,
   } = useAuth();
-  const recent = useRecentlyPlayed();
   const navigate = useNavigate();
   const isNative = Capacitor.isNativePlatform();
+  const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocId | null>(null);
 
   return (
     <div className="pb-10">
       <PageHeader
         eyebrow="PREFERENCES"
         title="Settings"
-        subtitle="Select an IVE album era to recolor the entire archive, or manage playback & sync."
+        subtitle="Select an IVE album era to recolor the entire archive, or customize playback."
         action={<BackLink to="/" label="Home" />}
       />
 
@@ -187,56 +187,15 @@ function SettingsPage() {
               checked={settings.rememberPlayback}
               onChange={(v) => setSetting("rememberPlayback", v)}
             />
-            <ToggleRow
-              label="Track recently played"
-              description="Save the last 15 songs you played to your history."
-              checked={settings.trackRecentlyPlayed}
-              onChange={(v) => setSetting("trackRecentlyPlayed", v)}
-            />
           </div>
         </div>
       </section>
 
-      {/* Library (Hairline Grouped) */}
+      {/* Welcome Tour (Hairline Grouped) */}
       <section className="mt-9">
-        <SectionHeader eyebrow="YOUR ARCHIVE" title="Library" />
+        <SectionHeader eyebrow="EXPERIENCE" title="Onboarding" />
         <div className="px-5">
-          <div className="editorial-rule divide-y divide-white/[0.08] border-y">
-            <Link to="/favorites" className="press flex items-center gap-3.5 py-3.5">
-              <Heart size={16} className="shrink-0 text-primary" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">Favorites</span>
-                <span className="block text-xs text-muted-foreground">{count} saved items</span>
-              </span>
-              <ChevronRight size={15} className="text-muted-foreground" />
-            </Link>
-
-            <div className="flex items-center gap-3.5 py-3.5">
-              <History size={16} className="shrink-0 text-primary" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">Recently played</span>
-                <span className="block text-xs text-muted-foreground">
-                  {recent.length} songs in history
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={clearRecentlyPlayed}
-                className="press inline-flex shrink-0 items-center gap-1.5 rounded-full border border-glass-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
-              >
-                <Trash2 size={11} /> Clear
-              </button>
-            </div>
-
-            <Link to="/music" className="press flex items-center gap-3.5 py-3.5">
-              <ListMusic size={16} className="shrink-0 text-primary" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">Music library</span>
-                <span className="block text-xs text-muted-foreground">Browse songs and eras</span>
-              </span>
-              <ChevronRight size={15} className="text-muted-foreground" />
-            </Link>
-
+          <div className="editorial-rule border-y">
             <button
               type="button"
               onClick={() => {
@@ -281,7 +240,7 @@ function SettingsPage() {
                       ? `Admin Session ID: ${uid.slice(0, 10)}… · Live catalog synced`
                       : authError
                         ? authError
-                        : "Favorites, era theme, and history are saved on your device."}
+                        : "Favorites and era theme are saved on your device."}
                   </p>
                 </div>
               </div>
@@ -290,17 +249,102 @@ function SettingsPage() {
         </section>
       )}
 
+      {/* Information & Legal (About Developer, FAQ, Copyright, Terms & Conditions, Privacy Policy) */}
+      <section className="mt-9">
+        <SectionHeader eyebrow="TRANSPARENCY & HELP" title="Information & Legal" />
+        <div className="px-5">
+          <div className="editorial-rule divide-y divide-white/[0.08] border-y">
+            <button
+              type="button"
+              onClick={() => setActiveLegalDoc("developer")}
+              className="press flex w-full items-center gap-3.5 py-3.5 text-left"
+            >
+              <User size={16} className="shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">About the Developer</span>
+                <span className="block text-xs text-muted-foreground">
+                  Built by @{LEGAL_META.creator} — a fellow DIVE sharing IVE&apos;s world
+                </span>
+              </span>
+              <ChevronRight size={15} className="text-muted-foreground" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveLegalDoc("faq")}
+              className="press flex w-full items-center gap-3.5 py-3.5 text-left"
+            >
+              <HelpCircle size={16} className="shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Frequently Asked Questions</span>
+                <span className="block text-xs text-muted-foreground">
+                  How streaming, lyrics, favorites, and charts work
+                </span>
+              </span>
+              <ChevronRight size={15} className="text-muted-foreground" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveLegalDoc("copyright")}
+              className="press flex w-full items-center gap-3.5 py-3.5 text-left"
+            >
+              <Copyright size={16} className="shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Copyright &amp; Fan Disclaimer</span>
+                <span className="block text-xs text-muted-foreground">
+                  IVE / Starship IP rights, YouTube &amp; AZLyrics credits, takedowns
+                </span>
+              </span>
+              <ChevronRight size={15} className="text-muted-foreground" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveLegalDoc("terms")}
+              className="press flex w-full items-center gap-3.5 py-3.5 text-left"
+            >
+              <FileText size={16} className="shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Terms &amp; Conditions</span>
+                <span className="block text-xs text-muted-foreground">
+                  What this archive does, does not do, and acceptable use
+                </span>
+              </span>
+              <ChevronRight size={15} className="text-muted-foreground" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveLegalDoc("privacy")}
+              className="press flex w-full items-center gap-3.5 py-3.5 text-left"
+            >
+              <Lock size={16} className="shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">Privacy Policy</span>
+                <span className="block text-xs text-muted-foreground">
+                  Zero personal info collected, anonymous sync &amp; data controls
+                </span>
+              </span>
+              <ChevronRight size={15} className="text-muted-foreground" />
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* About Footer */}
       <section className="mt-9 px-5">
         <p className="font-editorial text-xl font-semibold">IVE: Dive Archive</p>
         <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-          A fan-made editorial archive of IVE&apos;s members, discography, lyrics, and music.
-          Streams play via official YouTube embeds and linked cloud audio sources.
+          An independent, non-commercial fan archive crafted by @{LEGAL_META.creator}. Music streams
+          via official IVE / Starship YouTube embeds; lyrics referenced from AZLyrics.
         </p>
         <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80">
           V{APP_VERSION} · Not affiliated with IVE or Starship Entertainment
         </p>
       </section>
+
+      <LegalInfoModal docId={activeLegalDoc} onClose={() => setActiveLegalDoc(null)} />
     </div>
   );
 }

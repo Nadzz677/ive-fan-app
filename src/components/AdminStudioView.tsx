@@ -99,15 +99,9 @@ function formatDurationMmSs(seconds?: number) {
 
 function AdminLoginGate({
   isLight,
-  toggleColorMode,
-  isCloudEnabled,
-  onOpenFanPreview,
   onSignIn,
 }: {
   isLight: boolean;
-  toggleColorMode: () => void;
-  isCloudEnabled: boolean;
-  onOpenFanPreview: () => void;
   onSignIn: (email: string, password: string) => Promise<void>;
 }) {
   const [loginEmail, setLoginEmail] = useState("");
@@ -124,7 +118,6 @@ function AdminLoginGate({
     headingText,
     subText,
     mutedMonoText,
-    secondaryBtn,
     primaryBtn,
     inputClass,
     labelClass,
@@ -154,24 +147,11 @@ function AdminLoginGate({
       {/* Top System Bar */}
       <header className={cn("flex items-center justify-between border-b px-6 py-3.5", chromeBg)}>
         <div className="flex items-center gap-3">
-          {/* M.R.A. Dual-Arc Mint & Coral Logo Mark */}
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#181e24] shadow-sm ring-1 ring-white/10">
-            <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
-              <path
-                d="M7 15.5L11.5 20L19 9"
-                stroke="#5ce1b8"
-                strokeWidth="2.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M14 5A9 9 0 1 1 6.5 19"
-                stroke="#e04f67"
-                strokeWidth="2.6"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
+          <img
+            src="/icon-192.png"
+            alt="IVE logo"
+            className="h-9 w-9 rounded-xl object-cover shadow-sm ring-1 ring-white/10"
+          />
           <div>
             <div className="flex items-center gap-2">
               <span className="text-base font-bold tracking-tight text-white">Dive Archive</span>
@@ -184,142 +164,81 @@ function AdminLoginGate({
             </p>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleColorMode}
-            title={isLight ? "Switch to Dark Mode" : "Switch to Light Mode"}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
-              secondaryBtn,
-            )}
-          >
-            {isLight ? (
-              <>
-                <Moon size={14} className="text-[#e04f67]" /> Dark
-              </>
-            ) : (
-              <>
-                <Sun size={14} className="text-[#5ce1b8]" /> Light
-              </>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenFanPreview}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-medium transition-colors",
-              secondaryBtn,
-            )}
-          >
-            <Eye size={14} className="text-[#5ce1b8]" />
-            Preview Fan App
-          </button>
-        </div>
       </header>
 
       {/* Center Sign-In Card */}
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
         <div className={cn("rounded-2xl border p-7", panelBg)}>
-          <div className={cn("mb-6 flex items-center justify-between border-b pb-4", borderClass)}>
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#5ce1b8]/15 text-[#5ce1b8] ring-1 ring-[#5ce1b8]/30">
-                <Lock size={16} />
-              </div>
-              <div>
-                <h1 className={cn("text-base font-semibold", headingText)}>
-                  Administrator Sign-In
-                </h1>
-                <p className={cn("text-[11px]", subText)}>Project: ive-dive-archive</p>
-              </div>
+          <div className={cn("mb-6 flex items-center gap-2.5 border-b pb-4", borderClass)}>
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#5ce1b8]/15 text-[#5ce1b8] ring-1 ring-[#5ce1b8]/30">
+              <Lock size={16} />
             </div>
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] font-medium",
-                isCloudEnabled
-                  ? "border border-[#5ce1b8]/30 bg-[#5ce1b8]/15 text-[#5ce1b8]"
-                  : "border border-[#f5c43d]/30 bg-[#f5c43d]/15 text-[#f5c43d]",
-              )}
-            >
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  isCloudEnabled ? "bg-[#5ce1b8]" : "bg-[#f5c43d]",
-                )}
-              />
-              {isCloudEnabled ? "FIRESTORE ONLINE" : "CONNECTING"}
-            </span>
+            <div>
+              <h1 className={cn("text-base font-semibold", headingText)}>Administrator Sign-In</h1>
+              <p className={cn("text-[11px]", subText)}>Project: ive-dive-archive</p>
+            </div>
           </div>
 
-          {!isCloudEnabled ? (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-500">
-              Connecting to Firebase project... Verify that <code>.env</code> contains your{" "}
-              <code>VITE_FIREBASE_*</code> credentials.
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label htmlFor="admin-email" className={labelClass}>
+                Administrator Email
+              </label>
+              <input
+                id="admin-email"
+                name="email"
+                type="email"
+                autoComplete="username"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                spellCheck={false}
+                required
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="admin@ivedivearchive.com"
+                className={inputClass}
+              />
             </div>
-          ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label htmlFor="admin-email" className={labelClass}>
-                  Administrator Email
-                </label>
-                <input
-                  id="admin-email"
-                  name="email"
-                  type="email"
-                  autoComplete="username"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-bwignore="true"
-                  spellCheck={false}
-                  required
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="admin@ivedivearchive.com"
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label htmlFor="admin-password" className={labelClass}>
-                  Password
-                </label>
-                <input
-                  id="admin-password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-bwignore="true"
-                  required
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className={inputClass}
-                />
-              </div>
+            <div>
+              <label htmlFor="admin-password" className={labelClass}>
+                Password
+              </label>
+              <input
+                id="admin-password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                required
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className={inputClass}
+              />
+            </div>
 
-              {loginError && (
-                <div className="flex items-start gap-2 rounded-lg border border-[#e04f67]/30 bg-[#e04f67]/10 p-3 text-xs text-[#e04f67]">
-                  <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                  <span>{loginError}</span>
-                </div>
+            {loginError && (
+              <div className="flex items-start gap-2 rounded-lg border border-[#e04f67]/30 bg-[#e04f67]/10 p-3 text-xs text-[#e04f67]">
+                <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={busy}
+              className={cn(
+                "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
+                primaryBtn,
               )}
-
-              <button
-                type="submit"
-                disabled={busy}
-                className={cn(
-                  "mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all disabled:opacity-50",
-                  primaryBtn,
-                )}
-              >
-                <ShieldCheck size={15} />
-                {busy ? "Authenticating..." : "Authenticate & Open Console"}
-              </button>
-            </form>
-          )}
+            >
+              <ShieldCheck size={15} />
+              {busy ? "Authenticating..." : "Authenticate & Open Console"}
+            </button>
+          </form>
         </div>
       </main>
 
@@ -337,8 +256,7 @@ function AdminLoginGate({
 }
 
 export function AdminStudioView() {
-  const { isAdmin, email, signInAdmin, signOutAdmin, isCloudEnabled, setPreviewingFanApp } =
-    useAuth();
+  const { isAdmin, email, signInAdmin, signOutAdmin, setPreviewingFanApp } = useAuth();
   const navigate = useNavigate();
 
   // Admin Light / Dark theme state (persisted in localStorage)
@@ -372,15 +290,7 @@ export function AdminStudioView() {
   };
 
   if (!isAdmin) {
-    return (
-      <AdminLoginGate
-        isLight={isLight}
-        toggleColorMode={toggleColorMode}
-        isCloudEnabled={isCloudEnabled}
-        onOpenFanPreview={handleOpenFanPreview}
-        onSignIn={signInAdmin}
-      />
-    );
+    return <AdminLoginGate isLight={isLight} onSignIn={signInAdmin} />;
   }
 
   return (
@@ -1172,25 +1082,13 @@ function AdminStudioWorkspace({
         )}
       >
         <div>
-          {/* M.R.A. Centered Brand Block */}
+          {/* IVE Centered Brand Block */}
           <div className="flex flex-col items-center border-b border-[#2c3c4a] px-5 pt-6 pb-5 text-center">
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#18222b] shadow-md ring-1 ring-white/10">
-              <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
-                <path
-                  d="M7 15.5L11.5 20L19 9"
-                  stroke="#5ce1b8"
-                  strokeWidth="2.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M14 5A9 9 0 1 1 6.5 19"
-                  stroke="#e04f67"
-                  strokeWidth="2.6"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
+            <img
+              src="/icon-192.png"
+              alt="IVE logo"
+              className="h-11 w-11 rounded-2xl object-cover shadow-md ring-1 ring-white/10"
+            />
             <p className="mt-2.5 text-sm font-bold tracking-[0.16em] text-white uppercase">
               D.I.V.E.
             </p>
