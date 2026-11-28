@@ -15,6 +15,7 @@ export default tseslint.config(
       ".tanstack",
       ".wrangler",
       "android",
+      "ios",
       "src/routeTree.gen.ts",
     ],
   },

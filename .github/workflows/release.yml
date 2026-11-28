@@ -1,4 +1,4 @@
-name: Deploy Live Bundle & Release Android APK
+name: Deploy Live Bundle & Release Mobile Apps
 
 on:
   push:
@@ -12,6 +12,11 @@ on:
     inputs:
       build_apk:
         description: "Build and attach a new signed Android APK release"
+        required: false
+        default: "true"
+        type: boolean
+      build_ipa:
+        description: "Build and attach a new unsigned iOS IPA release"
         required: false
         default: "true"
         type: boolean
@@ -117,11 +122,82 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk "release-artifacts/IVE-Dive-Archive-${TAG}.apk"
           sha256sum "release-artifacts/IVE-Dive-Archive-${TAG}.apk" > "release-artifacts/IVE-Dive-Archive-${TAG}.apk.sha256"
 
-      - name: Publish GitHub Release
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: release-artifacts/*
+
+      - name: Publish APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release-artifacts/*.apk
+            release-artifacts/*.sha256
+          generate_release_notes: true
+
+  build-ios-ipa:
+    name: Build Unsigned iOS IPA
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build_ipa == true)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies & sync Capacitor iOS
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_ADMIN_EMAIL: ${{ secrets.VITE_ADMIN_EMAIL }}
+        run: |
+          npm ci
+          npm run build:mobile
+          npx cap sync ios
+
+      - name: Build unsigned Release App bundle with Xcode
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -sdk iphoneos \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CONFIGURATION_BUILD_DIR="${{ github.workspace }}/build-ios" \
+            build
+
+      - name: Package IPA & SHA-256 checksum
+        run: |
+          TAG="${GITHUB_REF_NAME:-v1.0.0}"
+          mkdir -p Payload release-artifacts
+          cp -R build-ios/App.app Payload/App.app
+          zip -qry "release-artifacts/IVE-Dive-Archive-${TAG}-unsigned.ipa" Payload
+          rm -rf Payload
+          shasum -a 256 "release-artifacts/IVE-Dive-Archive-${TAG}-unsigned.ipa" > "release-artifacts/IVE-Dive-Archive-${TAG}-unsigned.ipa.sha256"
+
+      - name: Upload iOS IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: release-artifacts/*
+
+      - name: Publish iOS IPA to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/*.ipa
             release-artifacts/*.sha256
           generate_release_notes: true
