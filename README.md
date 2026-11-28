@@ -1,266 +1,118 @@
-# IVE Dive Archive
+<div align="center">
 
-Build a modern responsive web application called “IVE: Dive Archive”, a fan-made information and music-discovery app dedicated to the K-pop group IVE.
+<img src="public/icon-192.png" alt="IVE: Dive Archive App Icon" width="112" height="112" />
 
-The app should feel like a polished modern mobile application rather than a traditional website. It must work beautifully on mobile screens first, while remaining responsive on desktop.
+# IVE: Dive Archive
 
-Technology
+**A mobile-first fan archive and music-discovery experience dedicated to IVE — built by a DIVE, for DIVEs.**
 
-Use:
+[![Version](https://img.shields.io/badge/version-1.0.0-c9c4f6?style=for-the-badge)](https://ive-dive-archive.web.app)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=000)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=fff)](https://www.typescriptlang.org)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=fff)](https://tailwindcss.com)
+[![Firebase](https://img.shields.io/badge/Firebase-Hosting_%26_Firestore-FFCA28?style=for-the-badge&logo=firebase&logoColor=000)](https://firebase.google.com)
+[![Capacitor](https://img.shields.io/badge/Capacitor-8_Android-119EFF?style=for-the-badge&logo=capacitor&logoColor=fff)](https://capacitorjs.com)
 
-- React
+<br />
 
-- TypeScript
+[Live Web Preview](https://ive-dive-archive.web.app) · [Features](#-features) · [Tech Stack](#-tech-stack) · [Getting Started](#-getting-started) · [Disclaimer](#-copyright--fan-disclaimer)
 
-- Tailwind CSS
+</div>
 
-- Lucide icons
+---
 
-For this first version, use static local data/JSON instead of a backend. Structure the code so that a database such as Supabase or Firebase can be added later.
+## Overview
 
-Visual Design
+**IVE: Dive Archive** brings IVE's discography, member profiles, era aesthetics, and music discovery together in a sleek, native-feeling mobile and web application. Designed to feel like a dedicated K-pop streaming and fandom companion rather than a generic webpage, it pairs glassmorphism UI and smooth micro-interactions with album-inspired **Living Era Themes**.
 
-Create a premium K-pop-inspired interface with:
+> **Project Status:** Currently in active pre-release development (`v1.0.0`). Features, catalog entries, and polish are continuously evolving before wider public release.
 
-- Clean modern typography
+---
 
-- Soft glassmorphism elements
+## Features
 
-- Rounded cards
+| Feature                    | Highlights                                                                                                                                                                                                                         |
+| :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **12 Living Era Themes**   | Switch between the signature midnight-violet palette and **11 album-inspired era themes** powered by OKLCH design tokens with radial theme-transition animations.                                                                  |
+| **Music Player & Lyrics**  | Embedded **YouTube IFrame** playback from official IVE / Starship channels, featuring a persistent mini-player, full-screen expanded player, shuffle/repeat queue, and **Original + Romanized lyrics** (referenced from AZLyrics). |
+| **2021–2026 Discography**  | Browse Korean, Japanese, and global releases with rich album artwork, release metadata, tracklists, and quick play actions.                                                                                                        |
+| **6 Member Dossiers**      | Dedicated profiles for **An Yujin, Gaeul, Rei, Jang Wonyoung, Liz, and Leeseo** with interactive cards and live next-birthday countdowns.                                                                                          |
+| **Latest News Dispatches** | Curated feed of IVE comebacks, milestones, and updates right from the Home screen.                                                                                                                                                 |
+| **Cloud-Synced Favorites** | Save favorite tracks and playback preferences locally and sync seamlessly via **Firebase Anonymous Authentication**.                                                                                                               |
+| **Web + Android Ready**    | Hosted on **Firebase Hosting** with hardened CSP/HSTS headers and packaged for Android via **Capacitor 8** (including hardware back-button handling and native media-session controls).                                            |
 
-- Subtle shadows
+---
 
-- Smooth transitions and micro-animations
+## Tech Stack
 
-- Large album artwork
+| Layer                 | Technologies                                                                        |
+| :-------------------- | :---------------------------------------------------------------------------------- |
+| **Frontend**          | React 19, TypeScript, Tailwind CSS v4, Lucide Icons                                 |
+| **Routing & Data**    | TanStack Router, TanStack Query                                                     |
+| **Backend & Hosting** | Firebase Hosting, Cloud Firestore, Firebase Anonymous Auth                          |
+| **Media & Lyrics**    | YouTube IFrame API (Official IVE / Starship embeds), AZLyrics reference             |
+| **Mobile**            | Capacitor 8 (`@capacitor/android`, `app`, `haptics`, `splash-screen`, `status-bar`) |
 
-- Elegant spacing
+### Architecture
 
-- Minimal visual clutter
+```mermaid
+flowchart LR
+  User["Fan App (Web / Android APK)"] --> Router["TanStack Router + React 19"]
+  Router --> Theme["12 Living Era OKLCH Themes"]
+  Router --> Player["YouTube IFrame Player + Lyrics"]
+  Router --> Firebase["Firebase Auth & Cloud Firestore"]
+  User --> Hosting["Firebase Hosting (CSP + HSTS)"]
+  User --> Capacitor["Capacitor 8 Android Bridge"]
+```
 
-- Mobile-first layout
+---
 
-Do not make the interface look like a generic AI-generated dashboard.
+## Getting Started
 
-The design should feel like a polished music/fan application.
+### Prerequisites
 
-Main Navigation
+- **Node.js** 20+ and **npm**
+- A Firebase project configured in `.env` (`VITE_FIREBASE_*` environment variables)
+- **Android Studio** (only if building or running the Android APK)
 
-Create these primary sections:
+### Local Web Development
 
-1. Home
+```bash
+# 1. Install dependencies
+npm install
 
-2. Members
-
-3. Discography
-
-4. Music
-
-5. Favorites
-
-Use a modern bottom navigation bar on mobile.
-
-Home Screen
-
-Create a visually impressive home screen containing:
-
-- IVE hero section
-
-- Featured release
-
-- Featured song
-
-- Six member preview cards
-
-- Recently added albums
-
-- Quick navigation to Members and Discography
-
-- A compact music-player preview
-
-The home screen should immediately communicate that this is an IVE fan application.
-
-Members
-
-Create a Members page containing six member cards:
-
-- An Yujin
-
-- Gaeul
-
-- Rei
-
-- Jang Wonyoung
-
-- Liz
-
-- Leeseo
-
-Each member card should have:
-
-- Image area
-
-- Name
-
-- Short information
-
-- Interactive hover/tap animation
-
-Create a dedicated member-detail view that can later be expanded with biography and additional information.
-
-Discography
-
-Create an album browsing interface.
-
-Each album card should contain:
-
-- Album artwork
-
-- Album title
-
-- Release date
-
-- Number of tracks
-
-Create an album-detail view containing:
-
-- Large album artwork
-
-- Album title
-
-- Release date
-
-- Track list
-
-- Favorite button
-
-Use placeholder/local image assets where necessary rather than inventing external image URLs.
-
-Music
-
-Create a music-library interface with:
-
-- Song cards
-
-- Album artwork
-
-- Song title
-
-- Album name
-
-- Favorite button
-
-- Play button
-
-Add a persistent bottom music player that appears when a song is selected.
-
-The player should visually include:
-
-- Album artwork
-
-- Song title
-
-- Play/pause
-
-- Previous/next
-
-- Progress bar
-
-- Favorite button
-
-For this version, do not include copyrighted audio files. Build the player interface and interaction logic using placeholder audio or a simulated playback state.
-
-Favorites
-
-Create a Favorites page where users can view:
-
-- Favorite songs
-
-- Favorite albums
-
-- Favorite members
-
-Persist favorites using localStorage so they remain after refreshing the page.
-
-Navigation and Interaction
-
-Make navigation feel like a real mobile application.
-
-Add:
-
-- Smooth page transitions
-
-- Button feedback
-
-- Card animations
-
-- Press/tap interactions
-
-- Empty states for sections with no favorites
-
-Code Quality
-
-Keep the application modular.
-
-Separate:
-
-- Components
-
-- Pages
-
-- Data
-
-- Types
-
-- Utility functions
-
-Create reusable components for:
-
-- Member cards
-
-- Album cards
-
-- Song cards
-
-- Navigation
-
-- Music player
-
-- Favorite buttons
-
-Do not put everything into one large component.
-
-Important
-
-Build the application as a functional first version, not merely a static mockup.
-
-All navigation buttons should work.
-
-Favorite interactions should work.
-
-Album and member detail views should work.
-
-The music player should respond to user interactions even if actual audio playback is simulated.
-
-After implementing the initial version, show the application and explain the main structure briefly.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/76bb26ee-df98-4abd-94a1-03952b4c1037).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
+# 2. Start the development server
 npm run dev
 ```
+
+### Production & Android Build
+
+```bash
+# Type-check & lint
+npx tsc --noEmit
+npm run lint
+
+# Build the mobile/SPA bundle & sync with Android
+npm run build:mobile
+npx cap sync android
+
+# Open in Android Studio
+npx cap open android
+```
+
+---
+
+## About the Developer
+
+Made with love by **[@Nadzz677](https://github.com/Nadzz677)** — a 19-year-old developer and fellow DIVE who built this archive purely out of passion to help fans and newcomers explore IVE's eras, members, discography, and lyrics in one place.
+
+- **GitHub:** [@Nadzz677](https://github.com/Nadzz677)
+- **Contact / Takedown Requests:** `nadzhaa254@gmail.com`
+
+---
+
+## Copyright & Fan Disclaimer
+
+- **Non-Commercial Fan Project:** **IVE: Dive Archive** is an unofficial, non-profit fan project and is **not affiliated with, endorsed by, or sponsored by** IVE, Starship Entertainment, Kakao Entertainment, Columbia Records, or Sony Music Japan.
+- **Audio & Lyrics Attribution:** All music playback is streamed via official **YouTube IFrame embeds** from IVE / Starship Entertainment channels (no downloadable audio files are hosted or distributed). Original and Romanized lyrics are referenced from **AZLyrics** for personal fandom enjoyment and educational reference.
+- **Support IVE Officially:** Playback in this app does **not** count toward official Korean or global music charts or music-show voting. Please continue supporting IVE on official platforms!
