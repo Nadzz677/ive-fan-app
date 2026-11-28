@@ -15,7 +15,7 @@
 
 <br />
 
-[Live Web Preview](https://ive-dive-archive.web.app) · [Features](#-features) · [Tech Stack](#-tech-stack) · [Getting Started](#-getting-started) · [Disclaimer](#-copyright--fan-disclaimer)
+[Live Web Preview](https://ive-dive-archive.web.app) · [Features](#-features) · [Tech Stack](#-tech-stack) · [About the Developer](#-about-the-developer) · [Disclaimer](#-copyright--fan-disclaimer)
 
 </div>
 
@@ -52,53 +52,6 @@
 | **Backend & Hosting** | Firebase Hosting, Cloud Firestore, Firebase Anonymous Auth                          |
 | **Media & Lyrics**    | YouTube IFrame API (Official IVE / Starship embeds), AZLyrics reference             |
 | **Mobile**            | Capacitor 8 (`@capacitor/android`, `app`, `haptics`, `splash-screen`, `status-bar`) |
-
-### Architecture
-
-```mermaid
-flowchart LR
-  User["Fan App (Web / Android APK)"] --> Router["TanStack Router + React 19"]
-  Router --> Theme["12 Living Era OKLCH Themes"]
-  Router --> Player["YouTube IFrame Player + Lyrics"]
-  Router --> Firebase["Firebase Auth & Cloud Firestore"]
-  User --> Hosting["Firebase Hosting (CSP + HSTS)"]
-  User --> Capacitor["Capacitor 8 Android Bridge"]
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- **Node.js** 20+ and **npm**
-- A Firebase project configured in `.env` (`VITE_FIREBASE_*` environment variables)
-- **Android Studio** (only if building or running the Android APK)
-
-### Local Web Development
-
-```bash
-# 1. Install dependencies
-npm install
-
-# 2. Start the development server
-npm run dev
-```
-
-### Production & Android Build
-
-```bash
-# Type-check & lint
-npx tsc --noEmit
-npm run lint
-
-# Build the mobile/SPA bundle & sync with Android
-npm run build:mobile
-npx cap sync android
-
-# Open in Android Studio
-npx cap open android
-```
 
 ---
 
