@@ -42,8 +42,8 @@
   --color-glass-border: var(--glass-border);
   --color-surface: var(--surface);
   --color-highlight: var(--highlight);
-  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
-  --font-editorial: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --font-display: "Syne", ui-sans-serif, system-ui, sans-serif;
+  --font-editorial: "Syne", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
 

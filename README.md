@@ -6,7 +6,7 @@
 
 **A mobile-first fan archive and music-discovery experience dedicated to IVE — built by a DIVE, for DIVEs.**
 
-[![Version](https://img.shields.io/badge/version-1.0.0-c9c4f6?style=for-the-badge)](https://ive-dive-archive.web.app)
+[![Download APK](https://img.shields.io/badge/Download_APK-v1.0.0_Android-5ce1b8?style=for-the-badge&logo=android&logoColor=000)](https://github.com/Nadzz677/ive-fan-app/releases/latest)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=000)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript&logoColor=fff)](https://www.typescriptlang.org)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=fff)](https://tailwindcss.com)
@@ -15,7 +15,7 @@
 
 <br />
 
-[Live Web Preview](https://ive-dive-archive.web.app) · [Features](#-features) · [Tech Stack](#-tech-stack) · [About the Developer](#-about-the-developer) · [Disclaimer](#-copyright--fan-disclaimer)
+**[Download Android APK](https://github.com/Nadzz677/ive-fan-app/releases/latest)** · [Features](#-features) · [Tech Stack](#-tech-stack) · [About the Developer](#-about-the-developer) · [Disclaimer](#-copyright--fan-disclaimer)
 
 </div>
 
@@ -23,23 +23,32 @@
 
 ## Overview
 
-**IVE: Dive Archive** brings IVE's discography, member profiles, era aesthetics, and music discovery together in a sleek, native-feeling mobile and web application. Designed to feel like a dedicated K-pop streaming and fandom companion rather than a generic webpage, it pairs glassmorphism UI and smooth micro-interactions with album-inspired **Living Era Themes**.
+**IVE: Dive Archive** brings IVE's discography, member profiles, era aesthetics, and music discovery together in a sleek Android app. Designed to feel like a dedicated K-pop streaming and fandom companion rather than a generic webpage, it pairs glassmorphism UI and smooth micro-interactions with album-inspired **Living Era Themes**—while syncing live UI, bug-fix, and catalog updates seamlessly without requiring constant APK reinstalls.
 
-> **Project Status:** Currently in active pre-release development (`v1.0.0`). Features, catalog entries, and polish are continuously evolving before wider public release.
+> **Project Status:** Currently in pre-release development (`v1.0.0`). Features, catalog entries, and polish are continuously evolving before wider public release.
+
+---
+
+## Android APK Installation & Security
+
+1. Open the **[Latest GitHub Release](https://github.com/Nadzz677/ive-fan-app/releases/latest)** and download **`IVE-Dive-Archive-v1.0.0.apk`**.
+2. If prompted by Android, allow installation from trusted browser/file source and install normally.
+3. **Verify Integrity (Optional):** Every release includes a `.sha256` checksum file so you can confirm the APK was not modified.
+4. **Hardened by Design:** Enforces HTTPS-only transport (no cleartext HTTP), system-trusted TLS certificates only, disabled Android backup extraction, strict WebView origin & file-access isolation, disabled WebView remote debugging, R8/ProGuard shrinking, and v1/v2/v3 APK signature verification.
 
 ---
 
 ## Features
 
-| Feature                    | Highlights                                                                                                                                                                                                                         |
-| :------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **12 Living Era Themes**   | Switch between the signature midnight-violet palette and **11 album-inspired era themes** powered by OKLCH design tokens with radial theme-transition animations.                                                                  |
-| **Music Player & Lyrics**  | Embedded **YouTube IFrame** playback from official IVE / Starship channels, featuring a persistent mini-player, full-screen expanded player, shuffle/repeat queue, and **Original + Romanized lyrics** (referenced from AZLyrics). |
-| **2021–2026 Discography**  | Browse Korean, Japanese, and global releases with rich album artwork, release metadata, tracklists, and quick play actions.                                                                                                        |
-| **6 Member Dossiers**      | Dedicated profiles for **An Yujin, Gaeul, Rei, Jang Wonyoung, Liz, and Leeseo** with interactive cards and live next-birthday countdowns.                                                                                          |
-| **Latest News Dispatches** | Curated feed of IVE comebacks, milestones, and updates right from the Home screen.                                                                                                                                                 |
-| **Cloud-Synced Favorites** | Save favorite tracks and playback preferences locally and sync seamlessly via **Firebase Anonymous Authentication**.                                                                                                               |
-| **Web + Android Ready**    | Hosted on **Firebase Hosting** with hardened CSP/HSTS headers and packaged for Android via **Capacitor 8** (including hardware back-button handling and native media-session controls).                                            |
+| Feature                    | Highlights                                                                                                                                                                                                                                                     |
+| :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **12 Living Era Themes**   | Switch between the signature midnight-violet palette and **11 album-inspired era themes** powered by OKLCH design tokens with radial theme-transition animations.                                                                                              |
+| **Music Player & Lyrics**  | Embedded **YouTube IFrame** playback from official IVE / Starship channels, featuring a persistent mini-player, full-screen expanded player, lock-screen media controls, shuffle/repeat queue, and **Original + Romanized lyrics** (referenced from AZLyrics). |
+| **2021–2026 Discography**  | Browse Korean, Japanese, and global releases with rich album artwork, release metadata, tracklists, and quick play actions.                                                                                                                                    |
+| **6 Member Dossiers**      | Dedicated profiles for **An Yujin, Gaeul, Rei, Jang Wonyoung, Liz, and Leeseo** with interactive cards and live next-birthday countdowns.                                                                                                                      |
+| **Latest News Dispatches** | Curated feed of IVE comebacks, milestones, and updates right from the Home screen.                                                                                                                                                                             |
+| **Cloud-Synced Favorites** | Save favorite tracks and playback preferences locally and sync seamlessly via **Firebase Anonymous Authentication**.                                                                                                                                           |
+| **Instant Live Updates**   | Content updates via Cloud Firestore and UI/bug-fix deploys sync automatically to installed APKs on launch.                                                                                                                                                     |
 
 ---
 

@@ -1,3 +1,10 @@
+# Capacitor / Android secrets & build outputs
+*.keystore
+*.jks
+android/keystore.properties
+*.apk
+android/app/release/
+
 # Logs
 logs
 *.log

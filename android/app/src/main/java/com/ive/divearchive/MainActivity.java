@@ -2,7 +2,9 @@ package com.ive.divearchive;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -48,7 +50,16 @@ public class MainActivity extends BridgeActivity {
     private boolean isTrustedLocalWebViewOrigin() {
         if (getBridge() == null || getBridge().getWebView() == null) return false;
         String currentUrl = getBridge().getWebView().getUrl();
-        return currentUrl != null && currentUrl.startsWith("https://localhost");
+        if (currentUrl == null) return false;
+        try {
+            Uri uri = Uri.parse(currentUrl);
+            if (!"https".equalsIgnoreCase(uri.getScheme())) return false;
+            String host = uri.getHost();
+            return "ive-dive-archive.web.app".equalsIgnoreCase(host)
+                || "localhost".equalsIgnoreCase(host);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     public class NativeAudioBridge {
@@ -143,11 +154,18 @@ public class MainActivity extends BridgeActivity {
         });
 
         if (getBridge() != null && getBridge().getWebView() != null) {
+            boolean isDebuggable =
+                (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+            WebView.setWebContentsDebuggingEnabled(isDebuggable);
+
             WebView webView = getBridge().getWebView();
             WebSettings settings = webView.getSettings();
             settings.setMediaPlaybackRequiresUserGesture(false);
             settings.setAllowFileAccess(false);
             settings.setAllowContentAccess(false);
+            settings.setAllowFileAccessFromFileURLs(false);
+            settings.setAllowUniversalAccessFromFileURLs(false);
+            settings.setGeolocationEnabled(false);
 
             webView.addJavascriptInterface(new NativeAudioBridge(), "IveNativeAudio");
 

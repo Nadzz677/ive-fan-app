@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowRight, ArrowUpRight, Disc3, Play, Settings } from "lucide-react";
+import { ArrowUpRight, Disc3, Play, Settings } from "lucide-react";
 import { albumTrackCount } from "@/data/albums";
 import { getNewsImage } from "@/data/imageAssets";
 import { DEFAULT_HERO_IMAGES, useCatalog } from "@/lib/catalog";
@@ -40,8 +40,29 @@ function HomePage() {
   const { albums, tracks, members, config, getAlbum, getTrack, getAlbumTracks } = useCatalog();
   const featuredAlbum = getAlbum(config.featuredAlbumId) ?? albums[0]!;
   const featuredTrack = getTrack(config.featuredTrackId) ?? tracks[0]!;
-  const featuredTrackTotal =
-    getAlbumTracks(featuredAlbum.id).length || albumTrackCount(featuredAlbum);
+
+  const [rotatingTrackId, setRotatingTrackId] = useState<string>(() => featuredTrack.id);
+
+  useEffect(() => {
+    setRotatingTrackId(featuredTrack.id);
+  }, [featuredTrack.id]);
+
+  useEffect(() => {
+    if (tracks.length <= 1) return;
+    const interval = window.setInterval(() => {
+      setRotatingTrackId((prevId) => {
+        const pool = tracks.filter((t) => t.id !== prevId);
+        if (pool.length === 0) return prevId;
+        return pool[Math.floor(Math.random() * pool.length)]!.id;
+      });
+    }, 10000);
+    return () => window.clearInterval(interval);
+  }, [tracks]);
+
+  const activeFeaturedTrack = getTrack(rotatingTrackId) ?? featuredTrack;
+  const activeFeaturedAlbum = getAlbum(activeFeaturedTrack.albumId) ?? featuredAlbum;
+  const activeFeaturedTrackTotal =
+    getAlbumTracks(activeFeaturedAlbum.id).length || albumTrackCount(activeFeaturedAlbum);
 
   const [failedHeroUrls, setFailedHeroUrls] = useState<Record<string, boolean>>({});
 
@@ -213,8 +234,8 @@ function HomePage() {
               </div>
             )}
           </div>
-          <h1 className="font-editorial mt-1.5 text-[3.4rem] font-semibold leading-[0.94] tracking-tight">
-            IVE <span className="gradient-accent-text italic font-medium">Dive Archive</span>
+          <h1 className="font-editorial mt-1.5 text-[2.45rem] sm:text-[3.15rem] font-bold leading-[0.98] tracking-tight">
+            IVE <span className="gradient-accent-text font-extrabold">Dive Archive</span>
           </h1>
           <p className="mt-2.5 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
             An editorial fan archive of IVE&apos;s eras, photocards, discography, and music.
@@ -224,13 +245,13 @@ function HomePage() {
               type="button"
               onClick={() =>
                 playTrack(
-                  featuredTrack.id,
+                  activeFeaturedTrack.id,
                   tracks.map((t) => t.id),
                 )
               }
               className="press inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-xs font-semibold tracking-wide text-primary-foreground glow"
             >
-              <Play size={14} className="fill-current" /> Play {featuredTrack.title}
+              <Play size={14} className="fill-current" /> Play {activeFeaturedTrack.title}
             </button>
             <Link
               to="/discography"
@@ -263,22 +284,28 @@ function HomePage() {
         </div>
       </section>
 
-      {/* 3. Featured Era Showcase */}
+      {/* 3. Horizontal Swipeable Editorial News */}
+      <section className="mt-9">
+        <SectionHeader eyebrow="DISPATCH" title="Latest Updates" />
+        <LatestNewsSection />
+      </section>
+
+      {/* 4. Featured Era Showcase */}
       <section className="mt-9">
         <SectionHeader
-          eyebrow={`LATEST ERA // ${releaseYear(featuredAlbum.releaseDate)}`}
+          eyebrow={`LATEST ERA // ${releaseYear(activeFeaturedAlbum.releaseDate)}`}
           title="Featured Release"
         />
         <div className="px-5">
           <Link
             to="/discography/$albumId"
-            params={{ albumId: featuredAlbum.id }}
+            params={{ albumId: activeFeaturedAlbum.id }}
             className="press group flex items-center gap-4 pb-4 editorial-rule border-b"
           >
             <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-glass-border bg-surface shadow-[var(--shadow-glow)]">
               <ArtworkImage
-                src={featuredAlbum.cover}
-                alt={`${featuredAlbum.title} album artwork`}
+                src={activeFeaturedAlbum.cover}
+                alt={`${activeFeaturedAlbum.title} album artwork`}
                 kind="album"
                 loading="lazy"
                 width={1024}
@@ -288,72 +315,30 @@ function HomePage() {
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-primary">
-                {featuredAlbum.type} · {featuredTrackTotal}{" "}
-                {featuredTrackTotal === 1 ? "track" : "tracks"}
+                {activeFeaturedAlbum.type} · {activeFeaturedTrackTotal}{" "}
+                {activeFeaturedTrackTotal === 1 ? "track" : "tracks"}
               </p>
-              <p className="font-editorial mt-0.5 truncate text-[1.75rem] font-semibold leading-tight group-hover:text-primary transition-colors">
-                {featuredAlbum.title}
+              <p className="font-editorial mt-0.5 truncate text-[1.45rem] font-bold leading-tight group-hover:text-primary transition-colors">
+                {activeFeaturedAlbum.title}
               </p>
               <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                {formatReleaseDate(featuredAlbum.releaseDate)}
+                {formatReleaseDate(activeFeaturedAlbum.releaseDate)}
               </p>
               <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                {featuredAlbum.description}
+                {activeFeaturedAlbum.description}
               </p>
             </div>
           </Link>
           <div className="mt-3.5">
-            <SongCard track={featuredTrack} />
+            <SongCard key={activeFeaturedTrack.id} track={activeFeaturedTrack} />
           </div>
         </div>
       </section>
 
-      {/* 4. Compact Editorial Birthday Ticker */}
+      {/* 5. Compact Editorial Birthday Ticker */}
       <section className="mt-9">
         <SectionHeader eyebrow="CALENDAR" title="Next Celebration" />
         <BirthdayCountdown />
-      </section>
-
-      {/* 5. Horizontal Swipeable Editorial News */}
-      <section className="mt-9">
-        <SectionHeader eyebrow="DISPATCH" title="Latest Updates" />
-        <LatestNewsSection />
-      </section>
-
-      {/* 6. Minimal Architectural Quick Links */}
-      <section className="mt-9 px-5">
-        <div className="editorial-rule border-t pt-4">
-          <div className="grid grid-cols-2 gap-3">
-            <Link
-              to="/music"
-              className="press group flex items-center justify-between border-b editorial-rule pb-3"
-            >
-              <div>
-                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-primary">
-                  {tracks.length} TRACKS
-                </p>
-                <p className="font-editorial text-xl font-semibold group-hover:text-primary transition-colors">
-                  Music Library
-                </p>
-              </div>
-              <ArrowRight size={15} className="text-muted-foreground group-hover:text-primary" />
-            </Link>
-            <Link
-              to="/discography"
-              className="press group flex items-center justify-between border-b editorial-rule pb-3"
-            >
-              <div>
-                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-primary">
-                  2021 — 2026
-                </p>
-                <p className="font-editorial text-xl font-semibold group-hover:text-primary transition-colors">
-                  Full Archive
-                </p>
-              </div>
-              <ArrowRight size={15} className="text-muted-foreground group-hover:text-primary" />
-            </Link>
-          </div>
-        </div>
       </section>
     </div>
   );
